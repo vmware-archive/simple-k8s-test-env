@@ -369,6 +369,23 @@ TLS_CRT_GID=0
 TLS_CRT_PERM=0644
 
 ################################################################################
+##                         K8S API Version Strings                            ##
+################################################################################
+
+KUBE_SCHEDULER_API_VERSION_OLD_PREFIX="componentconfig/v1alpha1"
+KUBE_SCHEDULER_API_VERSION_NEW_PREFIX="kubescheduler.config.k8s.io/v1alpha1"
+
+# If deploying a CI build or a release 1.12 or newer, use the new
+# kube-scheduler API version prefix. Otherwise use the old one.
+if echo "${K8S_VERSION}" | grep -q '^ci/' || \
+   echo "${K8S_VERSION}" | grep -q '1\.1[2-9]'; then
+  KUBE_SCHEDULER_API_VERSION="${KUBE_SCHEDULER_API_VERSION:-${KUBE_SCHEDULER_API_VERSION_NEW_PREFIX}}"
+else
+  KUBE_SCHEDULER_API_VERSION="${KUBE_SCHEDULER_API_VERSION:-${KUBE_SCHEDULER_API_VERSION_OLD_PREFIX}}"
+fi
+echo "KUBE_SCHEDULER_API_VERSION=${KUBE_SCHEDULER_API_VERSION}"
+
+################################################################################
 ##                                Functions                                   ##
 ################################################################################
 
@@ -1730,17 +1747,19 @@ EOF
 install_kube_scheduler() {
   echo "installing kube-scheduler"
 
-  cat <<EOF > /var/lib/kube-scheduler/kube-scheduler-config.yaml
-apiVersion: componentconfig/v1alpha1
-kind: KubeSchedulerConfiguration
-clientConnection:
-  kubeconfig: /var/lib/kube-scheduler/kubeconfig
-leaderElection:
-  leaderElect: true
-EOF
+#  cat <<EOF > /var/lib/kube-scheduler/kube-scheduler-config.yaml
+#apiVersion: ${KUBE_SCHEDULER_API_VERSION}
+#kind: KubeSchedulerConfiguration
+#clientConnection:
+#  kubeconfig: /var/lib/kube-scheduler/kubeconfig
+#leaderElection:
+#  leaderElect: true
+#EOF
 
   cat <<EOF > /etc/default/kube-scheduler
-SCHEDULER_OPTS="--config=/var/lib/kube-scheduler/kube-scheduler-config.yaml --v=2"
+SCHEDULER_OPTS="--kubeconfig=/var/lib/kube-scheduler/kubeconfig \\
+--leader-elect=true \\
+--v=2"
 EOF
 
   cat <<EOF > /etc/systemd/system/kube-scheduler.service
@@ -1796,8 +1815,6 @@ EOF
 
   cat <<EOF >/etc/default/kubelet
 KUBELET_OPTS="--client-ca-file=/etc/ssl/ca.crt${CLOUD_PROVIDER_OPTS} \\
---cluster-domain='${SERVICE_DOMAIN}' \\
---cluster-dns='${SERVICE_DNS_IPV4_ADDRESS}' \\
 --cni-bin-dir=/opt/bin/cni \\
 --config=/var/lib/kubelet/kubelet-config.yaml \\
 --container-runtime=remote \
@@ -1807,8 +1824,6 @@ KUBELET_OPTS="--client-ca-file=/etc/ssl/ca.crt${CLOUD_PROVIDER_OPTS} \\
 --network-plugin=cni \\
 --node-ip=${IPV4_ADDRESS} \\
 --register-node=true \\
---tls-cert-file=/etc/ssl/kubelet.crt \\
---tls-private-key-file=/etc/ssl/kubelet.key \\
 --v=2"
 EOF
 
@@ -1843,17 +1858,20 @@ EOF
 install_kube_proxy() {
   echo "installing kube-proxy"
 
-  cat <<EOF > /var/lib/kube-proxy/kube-proxy-config.yaml
-kind: KubeProxyConfiguration
-apiVersion: kubeproxy.config.k8s.io/v1alpha1
-clientConnection:
-  kubeconfig: "/var/lib/kube-proxy/kubeconfig"
-mode: "iptables"
-clusterCIDR: "${CLUSTER_CIDR}"
-EOF
+#  cat <<EOF > /var/lib/kube-proxy/kube-proxy-config.yaml
+#kind: KubeProxyConfiguration
+#apiVersion: kubeproxy.config.k8s.io/v1alpha1
+#clientConnection:
+#  kubeconfig: "/var/lib/kube-proxy/kubeconfig"
+#mode: "iptables"
+#clusterCIDR: "${CLUSTER_CIDR}"
+#EOF
 
   cat <<EOF >/etc/default/kube-proxy
-KUBE_PROXY_OPTS="--config=/var/lib/kube-proxy/kube-proxy-config.yaml"
+KUBE_PROXY_OPTS="--cluster-cidr='${CLUSTER_CIDR}' \\
+--kubeconfig='/var/lib/kube-proxy/kubeconfig' \\
+--proxy-mode='iptables' \\
+--v=2"
 EOF
 
   cat <<EOF >/etc/systemd/system/kube-proxy.service
