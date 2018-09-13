@@ -1505,7 +1505,6 @@ set -o allexport && . /etc/default/path && set +o allexport
 EOF
 }
 
-
 # Uploads information about this node to the etcd server.
 put_node_info() {
   # Get the number of nodes that have already stored their information.
@@ -3226,6 +3225,7 @@ download_binaries() {
 
 install_packages() {
   if command -v yum >/dev/null 2>&1; then
+    yum update --assumeno
     echo "yum install lsof bind-utils"
     yum -y install lsof bind-utils || true
     if [ ! "${NODE_TYPE}" = "controller" ]; then
@@ -3242,8 +3242,15 @@ install_packages() {
   fi
 }
 
+wait_for_network() {
+  retry_until_0 "waiting for network" ping -c1 www.google.com
+}
+
 # Writes /etc/profile.d/prompt.sh to provide shells with a sane prompt.
 configure_prompt || fatal "failed to configure prompt"
+
+# Waits for the network to fully come online.
+wait_for_network || fatal "failed to wait for network"
 
 # Install distribution package dependencies. Uses yum or apt-get, whichever
 # is available, to install socat and conntrack if either are not in the
@@ -3346,14 +3353,6 @@ install_kubernetes || fatal "failed to install kubernetes"
 # nginx should be installed on control plane nodes.
 if [ ! "${NODE_TYPE}" = "worker" ]; then
   install_nginx || fatal "failed to install nginx"
-fi
-
-# Unless cleanup is disabled, an attempt should be made to remove
-# all of the shared assets placed on the etcd server to facilitate
-# this deployment.
-if [ ! "${CLEANUP_DISABLED}" = "true" ]; then
-  # TODO implement cleanup
-  echo "cleanup disabled"
 fi
 
 echo "So long, and thanks for all the fish."
