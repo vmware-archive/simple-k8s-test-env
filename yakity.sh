@@ -183,6 +183,10 @@ NETWORK_DNS_1="${NETWORK_DNS_1:-8.8.8.8}"
 NETWORK_DNS_2="${NETWORK_DNS_2:-8.8.4.4}"
 NETWORK_DNS_SEARCH="${NETWORK_DNS_SEARCH:-${NETWORK_DOMAIN}}"
 
+# The number of seconds the keys associated with yakity will exist
+# before being removed by the etcd server.
+ETCD_LEASE_TTL=${ETCD_LEASE_TTL:-300}
+
 # Set to "true" to configure IP tables to allow all 
 # inbound and outbond connections.
 IPTABLES_ALLOW_ALL=true
@@ -438,6 +442,77 @@ do_with_lock() {
   release_lock
   echo "released lock used to safeley execute ${1}"
   return "${exit_code}"
+}
+
+# The ID of the lease associated with all keys added to etcd by this
+# script.
+#ETCD_LEASE_ID=
+
+# grant_etcd_lease defines PUT_WITH_LEASE as a shortcut means of invoking
+# "etcdctl put --lease=ETCD_LEASE_ID"
+#PUT_WITH_LEASE=
+
+# Grants a lease used to store all the keys added to etcd by yakity.
+grant_etcd_lease() {
+  lease_id_key="/yakity/lease/id"
+  lease_ttl_key="/yakity/lease/ttl"
+  lease_grantor_key="/yakity/lease/grantor"
+
+  ETCD_LEASE_ID=$(etcdctl get "${lease_id_key}" --print-value-only) || \
+    { error "failed to get lease id"; return; }
+
+  if [ -n "${ETCD_LEASE_ID}" ]; then
+    lease_ttl=$(etcdctl get "${lease_ttl_key}" --print-value-only) || \
+      { error "failed to get lease ttl"; return; }
+    lease_grantor=$(etcdctl get "${lease_grantor_key}" --print-value-only) || \
+      { error "failed to get lease grantor"; return; }
+
+    # Create a shortcut way to invoke 'etcdctl put' with the lease attached.
+    PUT_WITH_LEASE="etcdctl put --lease=${ETCD_LEASE_ID}"
+
+    printf 'lease already exists: id=%s ttl=%s grantor=%s\n' \
+           "${ETCD_LEASE_ID}" \
+           "${lease_ttl}" \
+           "${lease_grantor}"
+
+    return
+  fi
+
+  # Grant a new lease.
+  ETCD_LEASE_ID=$(etcdctl lease grant "${ETCD_LEASE_TTL}" | \
+    awk '{print $2}') || { error "error granting etcd lease"; return; }
+
+  # Create a shortcut way to invoke 'etcdctl put' with the lease attached.
+  PUT_WITH_LEASE="etcdctl put --lease=${ETCD_LEASE_ID}"
+
+  # Save the lease ID, TTL, and this host's name as the grantor.
+  ${PUT_WITH_LEASE} "${lease_id_key}" "${ETCD_LEASE_ID}" || \
+    { error "error storing etcd lease id"; return; }
+  ${PUT_WITH_LEASE} "${lease_ttl_key}" "${ETCD_LEASE_TTL}" || \
+    { error "error storing etcd lease TTL"; return; }
+  ${PUT_WITH_LEASE} "${lease_grantor_key}" "${HOST_FQDN}" || \
+    { error "error storing etcd lease grantor"; return; }
+
+  echo "lease id=${ETCD_LEASE_ID} granted"
+}
+
+put_string() {
+  echo "putting '${2}' into etcd key '${1}'"
+  ${PUT_WITH_LEASE} "${1}" "${2}" || \
+    { error "failed to put '${2}' into etcd key '${1}'"; return; }
+}
+
+put_file() {
+  echo "putting contents of '${2}' into etcd key '${1}'"
+  ${PUT_WITH_LEASE} "${1}" -- <"${2}" || \
+    { error "failed to put contents of '${2}' to etcd key '${1}'"; return; }
+}
+
+put_stdin() {
+  old_ifs="${IFS}"; IFS=''; stdin="$(cat)"; IFS="${old_ifs}"
+  echo "putting contents of STDIN into etcd key '${1}'"
+  echo "${stdin}" | ${PUT_WITH_LEASE} "${1}" || \
+    { error "failed to put contents of STDIN to etcd key '${1}'"; return; }
 }
 
 # Executes the supplied command until it succeeds or until 100 attempts
@@ -945,18 +1020,6 @@ install_ca_files() {
   fi
 }
 
-put_string() {
-  echo "putting '${2}' into etcd key '${1}'"
-  etcdctl put "${1}" "${2}" || \
-    { error "failed to put '${2}' into etcd key '${1}'"; return; }
-}
-
-put_file() {
-  echo "putting contents of '${2}' to etcd key '${1}'"
-  etcdctl put "${1}" -- <"${2}" || \
-    { error "failed to put contents of '${2}' to etcd key '${1}'"; return; }
-}
-
 install_etcd() {
   # Do not install etcd on worker nodes.
   [ "${NODE_TYPE}" = "worker" ] && return
@@ -1459,7 +1522,7 @@ put_node_info() {
   node_info_key="/yakity/nodes/${NODE_INDEX}"
   echo "node info key=${node_info_key}"
   
-  cat <<EOF | etcdctl put "${node_info_key}" || \
+  cat <<EOF | put_stdin "${node_info_key}" || \
     { error "failed to put node info"; return; }
 {
   "host_fqdn": "${HOST_FQDN}",
@@ -2126,7 +2189,7 @@ generate_or_fetch_shared_kubernetes_assets() {
   # node has run the initialization routine.
 
   # Indicate that the init process is running on this node.
-  etcdctl put "${init_node_key}" "${HOST_FQDN}" || \
+  put_string "${init_node_key}" "${HOST_FQDN}" || \
     { error "failed to put ${init_node_key}=${HOST_FQDN}"; return; }
 
   echo "generating shared kube-apiserver x509 cert/key pair"
@@ -3223,6 +3286,9 @@ discover_etcd_cluster_members || fatal "failed to discover etcd cluster members"
 # Generates the certs for etcdctl and creates the defaults and profile
 # files for etcdctl to make it easily usable by root and members of k8s-admin.
 configure_etcdctl || fatal "failed to configure etcdctl"
+
+# Grants a lease that is associated with all keys added to etcd by this script.
+do_with_lock grant_etcd_lease || fatal "failed to grant etcd lease"
 
 # Records information about this node in etcd so that other nodes
 # in the cluster can use the information. This function also builds
