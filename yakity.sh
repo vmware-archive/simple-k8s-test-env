@@ -1244,13 +1244,13 @@ create_dns_entries() {
 
   # Create the A-Record for this host.
   echo "creating DNS A-record for this host"
-  put_string "/skydns/${fqdn_rev}" '{"host":"'"${IPV4_ADDRESS}"'"}' || \
+  etcdctl put "/skydns/${fqdn_rev}" '{"host":"'"${IPV4_ADDRESS}"'"}' || \
     { error "failed to create DNS A-record"; return; }
   etcdctl get "/skydns/${fqdn_rev}"
 
   # Create the reverse lookup record for this host.
   echo "creating DNS reverse lookup record for this host"
-  put_string "/skydns/arpa/in-addr/${addr_slashes}" '{"host":"'"${HOST_FQDN}"'"}' || \
+  etcdctl put "/skydns/arpa/in-addr/${addr_slashes}" '{"host":"'"${HOST_FQDN}"'"}' || \
     { error "failed to create DNS reverse lookup record"; return; }
   etcdctl get "/skydns/arpa/in-addr/${addr_slashes}"
 }
