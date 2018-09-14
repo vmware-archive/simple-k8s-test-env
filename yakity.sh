@@ -2356,7 +2356,7 @@ wait_until_kube_apiserver_is_online() {
 }
 
 # Configures kubernetes to use RBAC.
-configure_k8s_rbac() {
+apply_rbac() {
   [ "${NODE_TYPE}" = "worker" ] && return
 
   echo "configuring kubernetes RBAC"
@@ -2432,7 +2432,7 @@ EOF
 }
 
 # Configures kubernetes to use CoreDNS for service DNS resolution.
-configure_k8s_dns_with_coredns() {
+apply_service_dns_with_coredns() {
   echo "configuring kubernetes service DNS with CoreDNS"
 
   # Reverse the service CIDR and remove the subnet notation so the
@@ -2614,7 +2614,7 @@ EOF
 }
 
 # Configures kubernetes to use kube-dns for service DNS resolution.
-configure_k8s_dns_with_kube_dns() {
+apply_service_dns_with_kube_dns() {
   echo "configuring kubernetes service DNS with kube-dns"
 
   cat <<EOF >/var/lib/kubernetes/kube-dns-podspec.yaml
@@ -2827,7 +2827,7 @@ EOF
 }
 
 # Configures kubernetes to use CoreDNS for service DNS resolution.
-configure_k8s_dns() {
+apply_service_dns() {
   [ "${NODE_TYPE}" = "worker" ] && return
 
   echo "configuring kubernetes service DNS"
@@ -2849,10 +2849,10 @@ configure_k8s_dns() {
     { error "error configuring kubernetes service DNS"; return; }
 
   if [ "${SERVICE_DNS_PROVIDER}" = "coredns" ]; then
-    configure_k8s_dns_with_coredns || \
+    apply_service_dns_with_coredns || \
       { error "failed to write CoreDNS podspec"; return; }
   else
-    configure_k8s_dns_with_kube_dns || \
+    apply_service_dns_with_kube_dns || \
       { error "failed to write kube-dns podspec"; return; }
   fi
 
@@ -2938,7 +2938,7 @@ EOF
     do_with_lock install_kube_apiserver_and_wait_until_its_online || return
 
     # Configure kubernetes to use RBAC.
-    do_with_lock configure_k8s_rbac || \
+    do_with_lock apply_rbac || \
       { error "failed to configure rbac for kubernetes"; return; }
 
     # Wait until RBAC is configured to install kube-controller-manager
@@ -2949,7 +2949,7 @@ EOF
       { error "failed to install kube-scheduler"; return; }
 
     # Deploy CoreDNS to kubernetes for kubernetes service DNS resolution.
-    do_with_lock configure_k8s_dns || \
+    do_with_lock apply_service_dns || \
       { error "failed to configure CoreDNS for kubernetes"; return; }
   fi
 
