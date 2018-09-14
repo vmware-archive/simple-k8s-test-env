@@ -43,28 +43,35 @@ is_debug && set -x && echo "tracing enabled"
 BIN_DIR="${BIN_DIR:-/opt/bin}"; mkdir -p "${BIN_DIR}"
 echo "${PATH}" | grep -qF "${BIN_DIR}" || export PATH="${BIN_DIR}:${PATH}"
 
+# echo2 echos the provided arguments to file descriptor 2, stderr.
+echo2() {
+  echo "${@}" 1>&2
+}
+
 # debug MSG
 #   Prints the supplies message to stderr, but only if debug mode is
 #   activated.
 debug() {
-  is_debug && return
-  echo "DEBUG: ${1}" 1>&2
+  is_debug || echo2 "DEBUG: ${1}"
 }
 
 # warn MSG
 #   Prints the supplies message to stderr.
 warn() {
-  echo "WARN: ${1}" 1>&2
+  echo2 "WARN: ${1}"
 }
+
+# Returns a success if the provided argument is a whole number.
+is_whole_num() { echo "${1}" | grep -q '^[[:digit:]]\{1,\}$'; }
 
 # error MSG [EXIT_CODE]
 #  Prints the supplied message to stderr and returns the shell's
 #  last known exit code, $?. If a second argument is provided the
 #  function returns its value as the return code.
 error() {
-  exit_code="${?}"; [ -n "${2}" ] && exit_code="${2}"
+  exit_code="${?}"; is_whole_num "${2}" && exit_code="${2}"
   [ "${exit_code}" -eq "0" ] && return 0
-  echo "ERROR [${exit_code}] - ${1}" 1>&2; return "${exit_code}"
+  echo2 "ERROR [${exit_code}] - ${1}"; return "${exit_code}"
 }
 
 # fatal MSG [EXIT_CODE]
@@ -74,7 +81,7 @@ error() {
 fatal() {
   exit_code="${?}"; [ -n "${2}" ] && exit_code="${2}"
   [ "${exit_code}" -eq "0" ] && return 0
-  echo "FATAL [${exit_code}] - ${1}" 1>&2; exit "${exit_code}"
+  echo2 "FATAL [${exit_code}] - ${1}" 1>&2; exit "${exit_code}"
 }
 
 # Warn the user if certain, expected directories do not exist.
@@ -129,9 +136,6 @@ echo "  NUM_NODES       = ${NUM_NODES}"
 # A quick var and function that indicates whether this is a single
 # node cluster.
 is_single() { [ -z "${ETCD_DISCOVERY}" ]; }
-
-# Returns a success if the provided argument is a whole number.
-is_whole_num() { echo "${1}" | grep -q '^[[:digit:]]\{1,\}$'; }
 
 if is_single; then
   echo "deploying single node cluster"
