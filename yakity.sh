@@ -1696,8 +1696,12 @@ EOF
 install_cloud_provider() {
   { [ -z "${CLOUD_PROVIDER}" ] || [ -z "${CLOUD_CONFIG}" ]; } && return
   mkdir -p /var/lib/kubernetes/
-  CLOUD_PROVIDER_OPTS=" --cloud-provider='${CLOUD_PROVIDER}' --cloud-config=/var/lib/kubernetes/cloud-provider.config"
-  echo "${CLOUD_CONFIG}" | base64 -d | gzip -d >/var/lib/kubernetes/cloud-provider.config
+  echo "${CLOUD_CONFIG}" | base64 -d | gzip -d >/var/lib/kubernetes/cloud-provider.conf
+  EXT_CLOUD_PROVIDER_OPTS=" --cloud-provider='${CLOUD_PROVIDER}'"
+  if [ ! "${CLOUD_PROVIDER}" = "external" ]; then
+    EXT_CLOUD_PROVIDER_OPTS="${EXT_CLOUD_PROVIDER_OPTS} --cloud-config=/var/lib/kubernetes/cloud-provider.conf"
+    CLOUD_PROVIDER_OPTS="${EXT_CLOUD_PROVIDER_OPTS}"
+  fi
 }
 
 install_kube_apiserver() {
@@ -1880,7 +1884,7 @@ tlsPrivateKeyFile: /etc/ssl/kubelet.key
 EOF
 
   cat <<EOF >/etc/default/kubelet
-KUBELET_OPTS="--client-ca-file=/etc/ssl/ca.crt${CLOUD_PROVIDER_OPTS} \\
+KUBELET_OPTS="--client-ca-file=/etc/ssl/ca.crt${EXT_CLOUD_PROVIDER_OPTS} \\
 --cni-bin-dir=/opt/bin/cni \\
 --config=/var/lib/kubelet/kubelet-config.yaml \\
 --container-runtime=remote \
@@ -2063,9 +2067,9 @@ EOF
 }
 
 fetch_tls() {
-  etcdctl get --print-value-only "${1}" > "${3}" || \
+  etcdctl get --print-value-only "${1}" >"${3}" || \
     { error "failed to write '${1}' to '${3}'"; return; }
-  etcdctl get --print-value-only "${2}" > "${4}" || \
+  etcdctl get --print-value-only "${2}" >"${4}" || \
     { error "failed to write '${2}' to '${4}'"; return; }
   { chmod 0444 "${3}" && chmod 0400 "${4}"; } || \
     { error "failed to chmod '${3}' & '${4}'"; return; }
@@ -2074,7 +2078,7 @@ fetch_tls() {
 }
 
 fetch_kubeconfig() {
-  etcdctl get --print-value-only "${1}" > "${2}" || \
+  etcdctl get --print-value-only "${1}" >"${2}" || \
     { error "failed to write '${1}' to '${2}'"; return; }
   chmod 0400 "${2}" || { error "failed to chmod '${2}'"; return; } 
   chown root:root "${2}" || { error "failed to chown '${2}'"; return; } 
@@ -2156,7 +2160,8 @@ generate_or_fetch_shared_kubernetes_assets() {
       fetch_kubeconfig "${shared_kfg_controller_manager_key}" \
                        /var/lib/kube-controller-manager/kubeconfig || \
         { error "failed to fetch shared kube-controller-manager kubeconfig"; return; }
-      
+      chmod 0644 /var/lib/kube-controller-manager/kubeconfig
+
       echo "fetching shared kube-scheduler kubeconfig"
       fetch_kubeconfig "${shared_kfg_scheduler_key}" \
                        /var/lib/kube-scheduler/kubeconfig || \
@@ -2183,6 +2188,13 @@ generate_or_fetch_shared_kubernetes_assets() {
                        /var/lib/kube-proxy/kubeconfig || \
         { error "failed to fetch shared kube-proxy kubeconfig"; return; }
 
+      echo "fetching shared kube-controller-manager kubeconfig"
+      fetch_kubeconfig "${shared_kfg_controller_manager_key}" \
+                       /var/lib/kube-controller-manager/kubeconfig || \
+        { error "failed to fetch shared kube-controller-manager kubeconfig"; return; }
+      chmod 0644 /var/lib/kube-controller-manager/kubeconfig
+      sed -i 's~127.0.0.1~'"${CLUSTER_FQDN}"'~g' \
+        /var/lib/kube-controller-manager/kubeconfig
     fi
 
     echo "fetched all shared assets" && return
@@ -2282,6 +2294,7 @@ generate_or_fetch_shared_kubernetes_assets() {
     KFG_TLS_CRT=/etc/ssl/kube-controller-manager.crt \
     KFG_TLS_KEY=/etc/ssl/kube-controller-manager.key \
     KFG_SERVER="https://127.0.0.1:${SECURE_PORT}" \
+    KFG_PERM=0644 \
     new_kubeconfig) || \
     { error "failed to generate shared kube-controller-manager kubeconfig"; return; }
 
@@ -2333,10 +2346,13 @@ EOF
     rm -f  /etc/ssl/kube-proxy.*
   elif [ "${NODE_TYPE}" = "worker" ]; then
     rm -fr /var/lib/kube-apiserver
-    rm -fr /var/lib/kube-controller-manager
+    #rm -fr /var/lib/kube-controller-manager
     rm -fr /var/lib/kube-scheduler
     rm -f  /var/lib/kubernetes/kubeconfig
     rm -f  /var/lib/kubernetes/encryption-config.yaml
+
+    sed -i 's~127.0.0.1~'"${CLUSTER_FQDN}"'~g' \
+        /var/lib/kube-controller-manager/kubeconfig
   fi
   rm -f /var/lib/kubernetes/public.kubeconfig
   rm -f /etc/ssl/k8s-admin.*
@@ -2867,6 +2883,297 @@ apply_service_dns() {
   echo "configured kubernetes service DNS"
 }
 
+apply_out_of_tree_cloud_provider_vsphere() {
+  cat <<EOF >/var/lib/kubernetes/cloud-provider-vsphere.yaml
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cloud-controller-manager
+  namespace: kube-system
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    scheduler.alpha.kubernetes.io/critical-pod: ""
+  labels:
+    component: cloud-controller-manager
+    tier: control-plane
+  name: vsphere-cloud-controller-manager
+  namespace: kube-system
+spec:
+  tolerations:
+  - key: node.cloudprovider.kubernetes.io/uninitialized
+    value: "true"
+    effect: NoSchedule
+#  - key: node-role.kubernetes.io/master
+#    effect: NoSchedule
+  containers:
+    - name: vsphere-cloud-controller-manager
+      image: luoh/vsphere-cloud-controller-manager:latest
+      args:
+        - /bin/vsphere-cloud-controller-manager
+        - --v=2
+        - --cloud-config=/etc/cloud/vsphere.conf
+        - --cloud-provider=vsphere
+        - --use-service-account-credentials=true
+        - --address=127.0.0.1
+        - --leader-elect=false
+        - --kubeconfig=/etc/srv/kubernetes/controller-manager.conf
+      volumeMounts:
+        - mountPath: /etc/srv/kubernetes/pki
+          name: k8s-certs
+          readOnly: true
+        - mountPath: /etc/ssl/certs
+          name: ca-certs
+          readOnly: true
+        - mountPath: /etc/srv/kubernetes/controller-manager.conf
+          name: kubeconfig
+          readOnly: true
+        - mountPath: /etc/cloud
+          name: cloud-config-volume
+          readOnly: true
+      resources:
+        requests:
+          cpu: 200m
+  hostNetwork: true
+  securityContext:
+    runAsUser: 1001
+  serviceAccountName: cloud-controller-manager
+  volumes:
+  - hostPath:
+      path: /etc/ssl
+      type: DirectoryOrCreate
+    name: k8s-certs
+  - hostPath:
+      path: /etc/ssl/certs
+      type: DirectoryOrCreate
+    name: ca-certs
+  - hostPath:
+      path: /var/lib/kube-controller-manager/kubeconfig
+      type: FileOrCreate
+    name: kubeconfig
+  - name: cloud-config-volume
+    configMap:
+      name: cloud-config
+EOF
+
+  # Deploy the podspec.
+  kubectl create -f /var/lib/kubernetes/cloud-provider-vsphere.yaml || \
+    { error "failed to configure cloud-provider-vsphere"; return; }
+
+  echo "configured cloud-provider-vsphere"
+}
+
+apply_out_of_tree_cloud_provider_rbac() {
+  cat <<EOF >/var/lib/kubernetes/cloud-provider-roles.yaml
+apiVersion: v1
+items:
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRole
+  metadata:
+    name: system:cloud-controller-manager
+  rules:
+  - apiGroups:
+    - ""
+    resources:
+    - events
+    verbs:
+    - create
+    - patch
+    - update
+  - apiGroups:
+    - ""
+    resources:
+    - nodes
+    verbs:
+    - '*'
+  - apiGroups:
+    - ""
+    resources:
+    - nodes/status
+    verbs:
+    - patch
+  - apiGroups:
+    - ""
+    resources:
+    - services
+    verbs:
+    - list
+    - patch
+    - update
+    - watch
+  - apiGroups:
+    - ""
+    resources:
+    - serviceaccounts
+    verbs:
+    - create
+    - get
+    - list
+    - watch
+    - update
+  - apiGroups:
+    - ""
+    resources:
+    - persistentvolumes
+    verbs:
+    - get
+    - list
+    - update
+    - watch
+  - apiGroups:
+    - ""
+    resources:
+    - endpoints
+    verbs:
+    - create
+    - get
+    - list
+    - watch
+    - update
+  - apiGroups:
+    - ""
+    resources:
+    - secrets
+    verbs:
+    - get
+    - list
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRole
+  metadata:
+    name: system:cloud-node-controller
+  rules:
+  - apiGroups:
+    - ""
+    resources:
+    - nodes
+    verbs:
+    - delete
+    - get
+    - patch
+    - update
+    - list
+  - apiGroups:
+    - ""
+    resources:
+    - nodes/status
+    verbs:
+    - patch
+  - apiGroups:
+    - ""
+    resources:
+    - events
+    verbs:
+    - create
+    - patch
+    - update
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRole
+  metadata:
+    name: system:pvl-controller
+  rules:
+  - apiGroups:
+    - ""
+    resources:
+    - persistentvolumes
+    verbs:
+    - get
+    - list
+    - watch
+  - apiGroups:
+    - ""
+    resources:
+    - events
+    verbs:
+    - create
+    - patch
+    - update
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRoleBinding
+  metadata:
+    name: system:cloud-node-controller
+  roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: ClusterRole
+    name: system:cloud-node-controller
+  subjects:
+  - kind: ServiceAccount
+    name: cloud-node-controller
+    namespace: kube-system
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRoleBinding
+  metadata:
+    name: system:pvl-controller
+  roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: ClusterRole
+    name: system:pvl-controller
+  subjects:
+  - kind: ServiceAccount
+    name: pvl-controller
+    namespace: kube-system
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRoleBinding
+  metadata:
+    name: system:cloud-controller-manager
+  roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: ClusterRole
+    name: system:cloud-controller-manager
+  subjects:
+  - kind: ServiceAccount
+    name: cloud-controller-manager
+    namespace: kube-system
+kind: List
+metadata: {}
+EOF
+
+  # Deploy the cloud-provider roles.
+  kubectl create -f /var/lib/kubernetes/cloud-provider-roles.yaml || \
+    { error "failed to configure cloud-provider roles"; return; }
+
+  echo "configured kubernetes cloud-provider roles"
+}
+
+apply_out_of_tree_cloud_provider_config_map() {
+  kubectl create configmap cloud-config \
+    --from-file=vsphere.conf=/var/lib/kubernetes/cloud-provider.conf \
+    --namespace=kube-system || \
+  { error "failed to create cloud-provider config map"; return; }
+  echo "configured cloud-provider config map"
+}
+
+apply_out_of_tree_cloud_provider() {
+  [ "${CLOUD_PROVIDER}" = "external" ] || return
+  [ "${NODE_TYPE}" = "worker" ] && return
+
+  echo "configuring kubernetes cloud-provider"
+
+  # Stores the name of the node that configures the cloud-provider.
+  init_ccm_key="/yakity/init-cloud-provider"
+
+  # Check to see if the init routine has already run on another node.
+  name_of_init_node=$(etcdctl get --print-value-only "${init_ccm_key}") || \
+    { error "failed to get name of init node for kubernetes cloud-provider"; return; }
+
+  if [ -n "${name_of_init_node}" ]; then
+    echo "kubernetes cloud-provider has already been configured from node ${name_of_init_node}"
+    return
+  fi
+
+  # Let other nodes know that this node has configured the cloud-provider.
+  put_string "${init_ccm_key}" "${HOST_FQDN}" || \
+    { error "error configuring kubernetes cloud-provider"; return; }
+
+  apply_out_of_tree_cloud_provider_config_map || return
+  apply_out_of_tree_cloud_provider_rbac || return
+  apply_out_of_tree_cloud_provider_vsphere || return
+
+  echo "configured kubernetes cloud-provider"
+}
+
 create_k8s_admin_group() {
   getent group k8s-admin >/dev/null 2>&1 || groupadd k8s-admin
 }
@@ -2955,6 +3262,12 @@ EOF
     # Deploy CoreDNS to kubernetes for kubernetes service DNS resolution.
     do_with_lock apply_service_dns || \
       { error "failed to configure CoreDNS for kubernetes"; return; }
+
+    if [ "${CLOUD_PROVIDER}" = "external" ]; then
+      # Deploy the out-of-tree cloud provider.
+      do_with_lock apply_out_of_tree_cloud_provider ||
+        { error "failed to configure cloud-provider for kubernetes"; return; }
+    fi
   fi
 
   # If the node isn't explicitly a controller then install the worker bits.
