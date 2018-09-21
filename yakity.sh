@@ -239,6 +239,22 @@ INSTALL_CONFORMANCE_TESTS=$(parse_bool "${INSTALL_CONFORMANCE_TESTS}")
 # Set to true to run the kubernetes e2e conformance test suite.
 RUN_CONFORMANCE_TESTS=$(parse_bool "${RUN_CONFORMANCE_TESTS}")
 
+# If defined, each of the following MANIFEST_YAML environment variables
+# are applied from a control plane node with 
+# "echo VAL | kubectl create -f -- -" using the order specified by the 
+# environment variable's name. The manifests are applied exactly once, 
+# no matter the number of control plane nodes.
+#
+# The reason for AFTER_RBAC_1 and AFTER_RBAC_2 is so systems like
+# Terraform that may generate manifests can still participate while
+# not overriding the end-user's values.
+#
+# Each of the values should be gzip'd and base64-encoded.
+#MANIFEST_YAML_BEFORE_RBAC=
+#MANIFEST_YAML_AFTER_RBAC_1=
+#MANIFEST_YAML_AFTER_RBAC_2=
+#MANIFEST_YAML_AFTER_ALL=
+
 # Can be generated with:
 #  head -c 32 /dev/urandom | base64
 ENCRYPTION_KEY="${ENCRYPTION_KEY:-$(head -c 32 /dev/urandom | base64)}" || \
@@ -252,6 +268,9 @@ CLUSTER_NAME="${CLUSTER_NAME:-kubernetes}"
 
 # The FQDN of the K8s cluster.
 CLUSTER_FQDN="${CLUSTER_NAME}.${NETWORK_DOMAIN}"
+
+# The FQDN used to access the K8s cluster externally.
+#EXTERNAL_FQDN=
 
 # The K8s cluster CIDR.
 CLUSTER_CIDR="${CLUSTER_CIDR:-10.200.0.0/16}"
@@ -295,6 +314,10 @@ SERVICE_FQDN="${SERVICE_NAME}.default.svc.${SERVICE_DOMAIN}"
 # The gzip'd, base-64 encoded cloud provider configuration to use.
 #CLOUD_CONFIG=
 
+# If CLOUD_PROVIDER=external then this value is inspected to
+# determine whiche external cloud-provider to use.
+CLOUD_PROVIDER_EXTERNAL="${CLOUD_PROVIDER_EXTERNAL:-vsphere}"
+
 # Versions of the software packages installed on the controller and
 # worker nodes. Please note that not all the software packages listed
 # below are installed on both controllers and workers. Some is intalled
@@ -331,8 +354,8 @@ TLS_CA_KEY=${TLS_CA_KEY:-/etc/ssl/ca.key}
 # The paths to the generated key and certificate files.
 # If TLS_KEY_OUT, TLS_CRT_OUT, and TLS_PEM_OUT are all unset then
 # the generated key and certificate are printed to STDOUT.
-#TLS_KEY_OUT=server.key
-#TLS_CRT_OUT=server.crt
+#TLS_KEY_OUT=
+#TLS_CRT_OUT=
 
 # The strength of the generated certificate
 TLS_DEFAULT_BITS=${TLS_DEFAULT_BITS:-2048}
@@ -1022,6 +1045,10 @@ install_ca_files() {
     echo "${TLS_CA_KEY_GZ}" | base64 -d | gzip -d > "${TLS_CA_KEY}" || \
       { error "failed to write CA key"; return; }
   fi
+
+  mkdir -p /etc/ssl/certs
+  ln -s "${TLS_CA_CRT}" /etc/ssl/certs/yakity-ca.crt
+  echo "linked ${TLS_CA_CRT} to /etc/ssl/certs/yakity-ca.crt"
 }
 
 install_etcd() {
@@ -1064,11 +1091,11 @@ ETCD_ADVERTISE_CLIENT_URLS=https://${IPV4_ADDRESS}:2379
 ETCD_CERT_FILE=/etc/ssl/etcd.crt
 ETCD_KEY_FILE=/etc/ssl/etcd.key
 ETCD_CLIENT_CERT_AUTH=true
-ETCD_TRUSTED_CA_FILE=/etc/ssl/ca.crt
+ETCD_TRUSTED_CA_FILE=${TLS_CA_CRT}
 ETCD_PEER_CERT_FILE=/etc/ssl/etcd.crt
 ETCD_PEER_KEY_FILE=/etc/ssl/etcd.key
 ETCD_PEER_CLIENT_CERT_AUTH=true
-ETCD_PEER_TRUSTED_CA_FILE=/etc/ssl/ca.crt
+ETCD_PEER_TRUSTED_CA_FILE=${TLS_CA_CRT}
 EOF
 
   # If ETCD_DISCOVERY is set then add it to the etcd environment file.
@@ -1201,7 +1228,7 @@ configure_etcdctl() {
 ETCDCTL_API=3
 ETCDCTL_CERT=/etc/ssl/etcdctl.crt
 ETCDCTL_KEY=/etc/ssl/etcdctl.key
-ETCDCTL_CACERT=/etc/ssl/ca.crt
+ETCDCTL_CACERT=${TLS_CA_CRT}
 EOF
 
   if [ "${NODE_TYPE}" = "worker" ]; then
@@ -1292,21 +1319,29 @@ http {
   keepalive_timeout    65;
   gzip                 on;
 
-    server {
-      listen      80;
-      server_name ${CLUSTER_FQDN};
+  server {
+    listen      80;
+    server_name ${CLUSTER_FQDN};
 
-      location = /healthz {
-        proxy_pass                    https://127.0.0.1:443/healthz;
-        proxy_ssl_trusted_certificate /etc/ssl/ca.crt;
-        proxy_set_header Host         \$host;
-        proxy_set_header X-Real-IP    \$remote_addr;
-      }
-
-      location / {
-        return 301 http://bit.ly/cnx-cicd-notes;
-      }
+    location = /healthz {
+      proxy_pass                    https://127.0.0.1:443/healthz;
+      proxy_ssl_trusted_certificate ${TLS_CA_CRT};
+      proxy_set_header Host         \$host;
+      proxy_set_header X-Real-IP    \$remote_addr;
     }
+
+    location = /kubernetes-test.tar.gz {
+      alias /var/lib/kubernetes/kubernetes-test.tar.gz;
+    }
+
+    location = /kubectl {
+      alias /opt/bin/kubectl;
+    }
+
+    location / {
+      return 301 http://bit.ly/cnx-cicd-notes;
+    }
+  }
 }
 EOF
 
@@ -1374,7 +1409,7 @@ install_coredns() {
         path /skydns
         endpoint https://127.0.0.1:2379
         upstream ${NETWORK_DNS_1}:53 ${NETWORK_DNS_2}:53
-        tls /etc/ssl/coredns.crt /etc/ssl/coredns.key /etc/ssl/ca.crt
+        tls /etc/ssl/coredns.crt /etc/ssl/coredns.key ${TLS_CA_CRT}
     }
     prometheus
     cache 160 ${NETWORK_DOMAIN}
@@ -1696,9 +1731,9 @@ EOF
 install_cloud_provider() {
   { [ -z "${CLOUD_PROVIDER}" ] || [ -z "${CLOUD_CONFIG}" ]; } && return
   mkdir -p /var/lib/kubernetes/
-  echo "${CLOUD_CONFIG}" | base64 -d | gzip -d >/var/lib/kubernetes/cloud-provider.conf
   EXT_CLOUD_PROVIDER_OPTS=" --cloud-provider='${CLOUD_PROVIDER}'"
   if [ ! "${CLOUD_PROVIDER}" = "external" ]; then
+    echo "${CLOUD_CONFIG}" | base64 -d | gzip -d >/var/lib/kubernetes/cloud-provider.conf
     EXT_CLOUD_PROVIDER_OPTS="${EXT_CLOUD_PROVIDER_OPTS} --cloud-config=/var/lib/kubernetes/cloud-provider.conf"
     CLOUD_PROVIDER_OPTS="${EXT_CLOUD_PROVIDER_OPTS}"
   fi
@@ -1719,16 +1754,16 @@ APISERVER_OPTS="--advertise-address=${IPV4_ADDRESS} \\
 --audit-log-path=/var/log/audit.log \\
 --authorization-mode=Node,RBAC \\
 --bind-address=0.0.0.0${CLOUD_PROVIDER_OPTS} \\
---client-ca-file=/etc/ssl/ca.crt \\
+--client-ca-file='${TLS_CA_CRT}' \\
 --enable-admission-plugins='Initializers,NamespaceLifecycle,NodeRestriction,LimitRanger,ServiceAccount,DefaultStorageClass,ResourceQuota' \\
 --enable-swagger-ui=true \\
---etcd-cafile=/etc/ssl/ca.crt \\
+--etcd-cafile='${TLS_CA_CRT}' \\
 --etcd-certfile=/etc/ssl/etcd.crt \
 --etcd-keyfile=/etc/ssl/etcd.key \\
 --etcd-servers='${ETCD_CLIENT_ENDPOINTS}' \\
 --event-ttl=1h \\
 --experimental-encryption-provider-config=/var/lib/kubernetes/encryption-config.yaml \\
---kubelet-certificate-authority=/etc/ssl/ca.crt \\
+--kubelet-certificate-authority='${TLS_CA_CRT}' \\
 --kubelet-client-certificate=/etc/ssl/kube-apiserver.crt \\
 --kubelet-client-key=/etc/ssl/kube-apiserver.key \\
 --kubelet-https=true \\
@@ -1776,11 +1811,11 @@ install_kube_controller_manager() {
 CONTROLLER_OPTS="--address=0.0.0.0${CLOUD_PROVIDER_OPTS} \\
 --cluster-cidr='${CLUSTER_CIDR}' \\
 --cluster-name='${SERVICE_NAME}' \\
---cluster-signing-cert-file=/etc/ssl/ca.crt \\
---cluster-signing-key-file=/etc/ssl/ca.key \\
+--cluster-signing-cert-file='${TLS_CA_CRT}' \\
+--cluster-signing-key-file='${TLS_CA_KEY}' \\
 --kubeconfig=/var/lib/kube-controller-manager/kubeconfig \\
 --leader-elect=true \\
---root-ca-file=/etc/ssl/ca.crt \\
+--root-ca-file='${TLS_CA_CRT}' \\
 --service-account-private-key-file=/etc/ssl/k8s-service-accounts.key \\
 --service-cluster-ip-range='${SERVICE_CIDR}' \\
 --use-service-account-credentials=true \\
@@ -1871,7 +1906,7 @@ authentication:
   webhook:
     enabled: true
   x509:
-    clientCAFile: /etc/ssl/ca.crt
+    clientCAFile: ${TLS_CA_CRT}
 authorization:
   mode: Webhook
 clusterDomain: ${SERVICE_DOMAIN}
@@ -1884,7 +1919,7 @@ tlsPrivateKeyFile: /etc/ssl/kubelet.key
 EOF
 
   cat <<EOF >/etc/default/kubelet
-KUBELET_OPTS="--client-ca-file=/etc/ssl/ca.crt${EXT_CLOUD_PROVIDER_OPTS} \\
+KUBELET_OPTS="--client-ca-file='${TLS_CA_CRT}'${EXT_CLOUD_PROVIDER_OPTS} \\
 --cni-bin-dir=/opt/bin/cni \\
 --config=/var/lib/kubelet/kubelet-config.yaml \\
 --container-runtime=remote \
@@ -2020,7 +2055,14 @@ install_kube_conformance() {
 #!/bin/sh
 { [ -f "${E2E_BIN}" ] && exit 0; } || mkdir -p "${E2E_DIR}"
 K8S_ARTIFACT="${K8S_ARTIFACT_PREFIX}/kubernetes-test.tar.gz"
-${CURL} -L "\${K8S_ARTIFACT}" | tar --strip-components=1 -xzvC "${E2E_DIR}"
+${CURL} -L "\${K8S_ARTIFACT}" | tar -xzvC "${E2E_DIR}" \
+  --exclude='kubernetes/platforms/darwin' \
+  --exclude='kubernetes/platforms/windows' \
+  --exclude='kubernetes/platforms/linux/arm' \
+  --exclude='kubernetes/platforms/linux/arm64' \
+  --exclude='kubernetes/platforms/linux/ppc64le' \
+  --exclude='kubernetes/platforms/linux/s390x' \
+  --strip-components=1
 exit_code="\${?}" && [ "\${exit_code}" -gt "1" ] && exit "\${exit_code}"
 exit 0
 EOF
@@ -2032,7 +2074,10 @@ EOF
 /opt/bin/download-kubernetes-test.sh || exit "${?}"
 mkdir -p "${E2E_LOG_DIR}/_artifacts"
 export KUBECONFIG="${E2E_KUBECONFIG}"
-${E2E_BIN} -ginkgo.focus "\\[Conformance\\]" -- \\
+${E2E_BIN} \\
+  -ginkgo.focus '\\[Conformance\\]' \\
+  -ginkgo.skip 'Alpha|Kubectl|\\[(Disruptive|Feature:[^\\]]+|Flaky)\\]' \\
+  -- \\
   --disable-log-dump \\
   --report-dir="${E2E_LOG_DIR}" | \\
   tee "${E2E_LOG_DIR}/e2e.log"
@@ -2160,7 +2205,6 @@ generate_or_fetch_shared_kubernetes_assets() {
       fetch_kubeconfig "${shared_kfg_controller_manager_key}" \
                        /var/lib/kube-controller-manager/kubeconfig || \
         { error "failed to fetch shared kube-controller-manager kubeconfig"; return; }
-      chmod 0644 /var/lib/kube-controller-manager/kubeconfig
 
       echo "fetching shared kube-scheduler kubeconfig"
       fetch_kubeconfig "${shared_kfg_scheduler_key}" \
@@ -2175,7 +2219,6 @@ generate_or_fetch_shared_kubernetes_assets() {
 
     # Fetch shared worker assets.
     if [ ! "${NODE_TYPE}" = "controller" ]; then
-
       echo "fetching shared kube-proxy cert/key pair"
       fetch_tls "${shared_tls_kube_proxy_crt_key}" \
                 "${shared_tls_kube_proxy_key_key}" \
@@ -2187,14 +2230,6 @@ generate_or_fetch_shared_kubernetes_assets() {
       fetch_kubeconfig "${shared_kfg_kube_proxy_key}" \
                        /var/lib/kube-proxy/kubeconfig || \
         { error "failed to fetch shared kube-proxy kubeconfig"; return; }
-
-      echo "fetching shared kube-controller-manager kubeconfig"
-      fetch_kubeconfig "${shared_kfg_controller_manager_key}" \
-                       /var/lib/kube-controller-manager/kubeconfig || \
-        { error "failed to fetch shared kube-controller-manager kubeconfig"; return; }
-      chmod 0644 /var/lib/kube-controller-manager/kubeconfig
-      sed -i 's~127.0.0.1~'"${CLUSTER_FQDN}"'~g' \
-        /var/lib/kube-controller-manager/kubeconfig
     fi
 
     echo "fetched all shared assets" && return
@@ -2208,10 +2243,18 @@ generate_or_fetch_shared_kubernetes_assets() {
     { error "failed to put ${init_node_key}=${HOST_FQDN}"; return; }
 
   echo "generating shared kube-apiserver x509 cert/key pair"
+  kube_apiserver_san_ip="127.0.0.1 ${SERVICE_IPV4_ADDRESS} ${CONTROLLER_IPV4_ADDRESSES}"
+  kube_apiserver_san_dns="localhost ${CLUSTER_FQDN} ${SERVICE_FQDN} ${SERVICE_NAME}.default"
+  if [ -n "${EXTERNAL_FQDN}" ]; then
+    # TODO Figure out how to parse "host EXTERNAL_FQDN" in case it returns
+    #      multiple IP addresses.
+    kube_apiserver_san_ip="${kube_apiserver_san_ip}"
+    kube_apiserver_san_dns="${kube_apiserver_san_dns} ${EXTERNAL_FQDN}"
+  fi
   (TLS_KEY_OUT=/etc/ssl/kube-apiserver.key \
     TLS_CRT_OUT=/etc/ssl/kube-apiserver.crt \
-    TLS_SAN_IP="127.0.0.1 ${SERVICE_IPV4_ADDRESS} ${CONTROLLER_IPV4_ADDRESSES}" \
-    TLS_SAN_DNS="localhost ${CLUSTER_FQDN} ${SERVICE_FQDN} ${SERVICE_NAME}.default" \
+    TLS_SAN_IP="${kube_apiserver_san_ip}" \
+    TLS_SAN_DNS="${kube_apiserver_san_dns}" \
     TLS_COMMON_NAME="${CLUSTER_ADMIN}" \
     new_cert) || \
     { error "failed to generate shared kube-apiserver x509 cert/key pair"; return; }
@@ -2346,13 +2389,10 @@ EOF
     rm -f  /etc/ssl/kube-proxy.*
   elif [ "${NODE_TYPE}" = "worker" ]; then
     rm -fr /var/lib/kube-apiserver
-    #rm -fr /var/lib/kube-controller-manager
+    rm -fr /var/lib/kube-controller-manager
     rm -fr /var/lib/kube-scheduler
     rm -f  /var/lib/kubernetes/kubeconfig
     rm -f  /var/lib/kubernetes/encryption-config.yaml
-
-    sed -i 's~127.0.0.1~'"${CLUSTER_FQDN}"'~g' \
-        /var/lib/kube-controller-manager/kubeconfig
   fi
   rm -f /var/lib/kubernetes/public.kubeconfig
   rm -f /etc/ssl/k8s-admin.*
@@ -2883,8 +2923,8 @@ apply_service_dns() {
   echo "configured kubernetes service DNS"
 }
 
-apply_out_of_tree_cloud_provider_vsphere() {
-  cat <<EOF >/var/lib/kubernetes/cloud-provider-vsphere.yaml
+apply_ccm_vsphere() {
+  cat <<EOF >/var/lib/kubernetes/ccm-vsphere.yaml
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -2907,29 +2947,25 @@ spec:
   - key: node.cloudprovider.kubernetes.io/uninitialized
     value: "true"
     effect: NoSchedule
-#  - key: node-role.kubernetes.io/master
-#    effect: NoSchedule
+  - key: node-role.kubernetes.io/master
+    effect: NoSchedule
   containers:
     - name: vsphere-cloud-controller-manager
       image: luoh/vsphere-cloud-controller-manager:latest
       args:
         - /bin/vsphere-cloud-controller-manager
-        - --v=2
-        - --cloud-config=/etc/cloud/vsphere.conf
+        - --v=4
+        - --cloud-config=/etc/cloud/cloud-provider.conf
         - --cloud-provider=vsphere
+        - --cluster-cidr='${CLUSTER_CIDR}'
+        - --cluster-name='${CLUSTER_NAME}'
         - --use-service-account-credentials=true
         - --address=127.0.0.1
         - --leader-elect=false
-        - --kubeconfig=/etc/srv/kubernetes/controller-manager.conf
+        - --kubeconfig=/etc/cloud/kubeconfig
       volumeMounts:
-        - mountPath: /etc/srv/kubernetes/pki
-          name: k8s-certs
-          readOnly: true
         - mountPath: /etc/ssl/certs
-          name: ca-certs
-          readOnly: true
-        - mountPath: /etc/srv/kubernetes/controller-manager.conf
-          name: kubeconfig
+          name: ca-certs-volume
           readOnly: true
         - mountPath: /etc/cloud
           name: cloud-config-volume
@@ -2942,32 +2978,23 @@ spec:
     runAsUser: 1001
   serviceAccountName: cloud-controller-manager
   volumes:
-  - hostPath:
-      path: /etc/ssl
-      type: DirectoryOrCreate
-    name: k8s-certs
-  - hostPath:
-      path: /etc/ssl/certs
-      type: DirectoryOrCreate
-    name: ca-certs
-  - hostPath:
-      path: /var/lib/kube-controller-manager/kubeconfig
-      type: FileOrCreate
-    name: kubeconfig
+  - name: ca-certs-volume
+    configMap:
+      name: ca-certs
   - name: cloud-config-volume
     configMap:
       name: cloud-config
 EOF
 
   # Deploy the podspec.
-  kubectl create -f /var/lib/kubernetes/cloud-provider-vsphere.yaml || \
-    { error "failed to configure cloud-provider-vsphere"; return; }
+  kubectl create -f /var/lib/kubernetes/ccm-vsphere.yaml || \
+    { error "failed to configure CCM for vSphere"; return; }
 
-  echo "configured cloud-provider-vsphere"
+  echo "configured CCM for vSphere"
 }
 
-apply_out_of_tree_cloud_provider_rbac() {
-  cat <<EOF >/var/lib/kubernetes/cloud-provider-roles.yaml
+apply_ccm_rbac() {
+  cat <<EOF >/var/lib/kubernetes/ccm-roles.yaml
 apiVersion: v1
 items:
 - apiVersion: rbac.authorization.k8s.io/v1
@@ -3040,6 +3067,7 @@ items:
     verbs:
     - get
     - list
+    - watch
 - apiVersion: rbac.authorization.k8s.io/v1
   kind: ClusterRole
   metadata:
@@ -3069,6 +3097,22 @@ items:
     - create
     - patch
     - update
+  - apiGroups:
+    - ""
+    resources:
+    - secrets
+    verbs:
+    - get
+    - list
+    - watch
+  - apiGroups:
+    - ""
+    resources:
+    - serviceaccounts
+    verbs:
+    - get
+    - list
+    - watch
 - apiVersion: rbac.authorization.k8s.io/v1
   kind: ClusterRole
   metadata:
@@ -3090,6 +3134,13 @@ items:
     - create
     - patch
     - update
+kind: List
+metadata: {}
+EOF
+
+  cat <<EOF >/var/lib/kubernetes/ccm-role-bindings.yaml
+apiVersion: v1
+items:
 - apiVersion: rbac.authorization.k8s.io/v1
   kind: ClusterRoleBinding
   metadata:
@@ -3126,52 +3177,170 @@ items:
   - kind: ServiceAccount
     name: cloud-controller-manager
     namespace: kube-system
+  - kind: User
+    name: cloud-controller-manager
 kind: List
 metadata: {}
 EOF
 
-  # Deploy the cloud-provider roles.
-  kubectl create -f /var/lib/kubernetes/cloud-provider-roles.yaml || \
-    { error "failed to configure cloud-provider roles"; return; }
+  # Create the CCM roles.
+  kubectl create -f /var/lib/kubernetes/ccm-roles.yaml || \
+    { error "failed to configure CCM roles"; return; }
 
-  echo "configured kubernetes cloud-provider roles"
+  # Create the CCM role bindings.
+  kubectl create -f /var/lib/kubernetes/ccm-role-bindings.yaml || \
+    { error "failed to configure CCM role bindings"; return; }
+
+  echo "configured CCM RBAC"
 }
 
-apply_out_of_tree_cloud_provider_config_map() {
-  kubectl create configmap cloud-config \
-    --from-file=vsphere.conf=/var/lib/kubernetes/cloud-provider.conf \
+apply_ccm_configmaps() {
+  # Create a directory to generate files for the CCM.
+  mkdir -p /var/lib/kubernetes/.ccm
+
+  # Copy all of the crt files in the /etc/ssl/certs directory
+  # into the CCM directory in order to create a ca-certs
+  # config map.
+  for f in /etc/ssl/certs/*.crt; do
+    rf=$(readlink "${f}") || rf="${f}"
+    cp -f "${rf}" /var/lib/kubernetes/.ccm
+    echo "adding '${rf}' to ca-certs"
+  done
+
+  # Create a config map with all of the host's trusted certs.
+  kubectl create configmap ca-certs \
+    --from-file=/var/lib/kubernetes/.ccm/ \
     --namespace=kube-system || \
-  { error "failed to create cloud-provider config map"; return; }
-  echo "configured cloud-provider config map"
+  { error "failed to create ca-certs configmap"; return; }
+  echo "created ca-certs configmap"
+
+  # Remove the certs from the CCM directory.
+  rm -f /var/lib/kubernetes/.ccm/*.crt
+
+  echo "generating CCM x509 cert/key pair"
+  (TLS_KEY_OUT=/var/lib/kubernetes/.ccm/key.pem \
+    TLS_CRT_OUT=/var/lib/kubernetes/.ccm/crt.pem \
+    TLS_SAN=false \
+    TLS_ORG_NAME="system:cloud-controller-manager" \
+    TLS_COMMON_NAME="cloud-controller-manager" \
+    new_cert) || \
+    { error "failed to generate CCM x509 cert/key pair"; return; }
+
+  # Generate the CCM's kubeconfig.
+  echo "generating CCM kubeconfig"
+  (KFG_FILE_PATH=/var/lib/kubernetes/.ccm/kubeconfig \
+    KFG_USER="cloud-controller-manager" \
+    KFG_TLS_CRT=/var/lib/kubernetes/.ccm/crt.pem \
+    KFG_TLS_KEY=/var/lib/kubernetes/.ccm/key.pem \
+    KFG_SERVER="https://${CLUSTER_FQDN}:${SECURE_PORT}" \
+    KFG_PERM=0644 \
+    new_kubeconfig) || \
+    { error "failed to generate CCM kubeconfig"; return; }
+
+  # Remove the CCM's pem files once they've been added to the kubeconfig.
+  rm -f /var/lib/kubernetes/.ccm/*.pem
+
+  # Write the cloud-provider config file to disk in order to load
+  # it into a configmap.
+  if [ -n "${CLOUD_CONFIG}" ]; then
+    echo "${CLOUD_CONFIG}" | \
+      base64 -d | \
+      gzip -d >/var/lib/kubernetes/.ccm/cloud-provider.conf
+    echo "created cloud-provider.conf for CCM"
+  fi
+
+  # Create a configmap with the CCM's kubeconfig and cloud-provider
+  # configuration file.
+  kubectl create configmap cloud-config \
+    --from-file=/var/lib/kubernetes/.ccm/ \
+    --namespace=kube-system || \
+  { error "failed to create cloud-config configmap"; return; }
+  echo "created cloud-config configmap"
+
+  # Remove the CCM directory.
+  rm -fr /var/lib/kubernetes/.ccm
 }
 
-apply_out_of_tree_cloud_provider() {
+apply_ccm() {
   [ "${CLOUD_PROVIDER}" = "external" ] || return
   [ "${NODE_TYPE}" = "worker" ] && return
 
-  echo "configuring kubernetes cloud-provider"
+  echo "configuring CCM"
 
   # Stores the name of the node that configures the cloud-provider.
   init_ccm_key="/yakity/init-cloud-provider"
 
   # Check to see if the init routine has already run on another node.
   name_of_init_node=$(etcdctl get --print-value-only "${init_ccm_key}") || \
-    { error "failed to get name of init node for kubernetes cloud-provider"; return; }
+    { error "failed to get name of init node for CCM"; return; }
 
   if [ -n "${name_of_init_node}" ]; then
-    echo "kubernetes cloud-provider has already been configured from node ${name_of_init_node}"
+    echo "CCM has already been configured from node ${name_of_init_node}"
     return
   fi
 
   # Let other nodes know that this node has configured the cloud-provider.
   put_string "${init_ccm_key}" "${HOST_FQDN}" || \
-    { error "error configuring kubernetes cloud-provider"; return; }
+    { error "error configuring CCM"; return; }
 
-  apply_out_of_tree_cloud_provider_config_map || return
-  apply_out_of_tree_cloud_provider_rbac || return
-  apply_out_of_tree_cloud_provider_vsphere || return
+  apply_ccm_configmaps || return
+  apply_ccm_rbac || return
 
-  echo "configured kubernetes cloud-provider"
+  # Select the cloud provider.
+  case "${CLOUD_PROVIDER_EXTERNAL}" in
+    vsphere) apply_ccm_vsphere || return;;
+    *) { error "invalid cloud provider=${CLOUD_PROVIDER_EXTERNAL}" 1; return; }
+  esac
+
+  echo "configured CCM"
+}
+
+apply_manifest() {
+  [ "${NODE_TYPE}" = "worker" ] && return
+
+  op_name="manifest-${1}"
+  echo "applying ${op_name}"
+
+  # Stores the name of the node that applies the manifest.
+  init_node_key="/yakity/apply-${op_name}"
+
+  # Check to see if the init routine has already run on another node.
+  name_of_init_node=$(etcdctl get --print-value-only "${init_node_key}") || \
+    { error "failed to get name of init node for ${op_name}"; return; }
+
+  if [ -n "${name_of_init_node}" ]; then
+    echo "${op_name} has already been applied on ${name_of_init_node}"
+    return
+  fi
+
+  # Let other nodes know that this node has run the init routine.
+  put_string "${init_node_key}" "${HOST_FQDN}" || \
+    { error "error applying ${op_name}"; return; }
+
+  echo "${2}" | base64 -d | gzip -d | kubectl create -f - || \
+    { error "error applying ${op_name}"; return; }
+
+  echo "applied ${op_name}"
+}
+
+apply_manifest_before_rbac() {
+  [ -z "${MANIFEST_YAML_BEFORE_RBAC}" ] || \
+    apply_manifest "before-rbac" "${MANIFEST_YAML_BEFORE_RBAC}"
+}
+
+apply_manifest_after_rbac_1() {
+  [ -z "${MANIFEST_YAML_AFTER_RBAC_1}" ] || \
+    apply_manifest "after-rbac-1" "${MANIFEST_YAML_AFTER_RBAC_1}"
+}
+
+apply_manifest_after_rbac_2() {
+  [ -z "${MANIFEST_YAML_AFTER_RBAC_2}" ] || \
+    apply_manifest "after-rbac-2" "${MANIFEST_YAML_AFTER_RBAC_2}"
+}
+
+apply_manifest_after_all() {
+  [ -z "${MANIFEST_YAML_AFTER_ALL}" ] || \
+    apply_manifest "after-all" "${MANIFEST_YAML_AFTER_ALL}"
 }
 
 create_k8s_admin_group() {
@@ -3201,6 +3370,20 @@ install_kube_apiserver_and_wait_until_its_online() {
 
   wait_until_kube_apiserver_is_online || \
     { error "error waiting until kube-apiserver is online"; return; }
+}
+
+apply_rbac_and_manifests() {
+  apply_manifest_before_rbac || \
+    { error "failed to apply manifest-before-rbac"; return; }
+
+  apply_rbac || \
+    { error "failed to configure rbac for kubernetes"; return; }
+
+  apply_manifest_after_rbac_1 || \
+    { error "failed to apply manifest-after-rbac-1"; return; }
+
+   apply_manifest_after_rbac_2 || \
+    { error "failed to apply manifest-after-rbac-2"; return; }
 }
 
 install_kubernetes() {
@@ -3248,9 +3431,7 @@ EOF
     # for more information.
     do_with_lock install_kube_apiserver_and_wait_until_its_online || return
 
-    # Configure kubernetes to use RBAC.
-    do_with_lock apply_rbac || \
-      { error "failed to configure rbac for kubernetes"; return; }
+    do_with_lock apply_rbac_and_manifests || return
 
     # Wait until RBAC is configured to install kube-controller-manager
     # and kube-scheduler.
@@ -3265,9 +3446,12 @@ EOF
 
     if [ "${CLOUD_PROVIDER}" = "external" ]; then
       # Deploy the out-of-tree cloud provider.
-      do_with_lock apply_out_of_tree_cloud_provider ||
-        { error "failed to configure cloud-provider for kubernetes"; return; }
+      do_with_lock apply_ccm ||
+        { error "failed to configure CCM"; return; }
     fi
+
+    do_with_lock apply_manifest_after_all || \
+      { error "failed to apply manifest-after-all"; return; }
   fi
 
   # If the node isn't explicitly a controller then install the worker bits.
@@ -3440,15 +3624,13 @@ download_kubernetes_server() {
 }
 
 download_kubernetes_test() {
-  mkdir -p /var/lib/kubernetes/e2e
+  mkdir -p /var/lib/kubernetes; chmod 0755 /var/lib/kubernetes
   K8S_ARTIFACT="${K8S_ARTIFACT_PREFIX}/kubernetes-test.tar.gz"
   echo "downloading ${K8S_ARTIFACT}"
-  ${CURL} -L "${K8S_ARTIFACT}" | \
-    tar --strip-components=1 -xzvC /var/lib/kubernetes/e2e
-  exit_code="${?}" && \
-    [ "${exit_code}" -gt "1" ] && \
-    { error "failed to download kubernetes tests" "${exit_code}"; return; }
-  return 0
+  ${CURL} -Lo /var/lib/kubernetes/kubernetes-test.tar.gz \
+    "${K8S_ARTIFACT}" || \
+    { error "failed to download kubernetes test"; return; }
+  chmod 0644 /var/lib/kubernetes/kubernetes-test.tar.gz
 }
 
 download_nginx() {
@@ -3518,6 +3700,7 @@ download_binaries() {
   # Download binaries found only on control-plane nodes.
   if [ ! "${NODE_TYPE}" = "worker" ]; then
     download_kubernetes_server || { error "failed to download kubernetes server"; return; }
+    download_kubernetes_test   || { error "failed to download kubernetes test"; return; }
     download_nginx             || { error "failed to download nginx"; return; }
     download_coredns           || { error "failed to download coredns"; return; }
   fi
@@ -3662,14 +3845,14 @@ if [ ! "${NODE_TYPE}" = "controller" ]; then
   install_containerd  || fatal "failed to install containerd"
 fi
 
-# Installs kubernetes. For controller nodes this installs kube-apiserver,
-# kube-controller-manager, and kube-scheduler. For worker nodes this
-# installs the kubelet and kube-proxy.
-install_kubernetes || fatal "failed to install kubernetes"
-
 # nginx should be installed on control plane nodes.
 if [ ! "${NODE_TYPE}" = "worker" ]; then
   install_nginx || fatal "failed to install nginx"
 fi
+
+# Installs kubernetes. For controller nodes this installs kube-apiserver,
+# kube-controller-manager, and kube-scheduler. For worker nodes this
+# installs the kubelet and kube-proxy.
+install_kubernetes || fatal "failed to install kubernetes"
 
 echo "So long, and thanks for all the fish."
