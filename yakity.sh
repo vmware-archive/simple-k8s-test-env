@@ -220,6 +220,15 @@ CURL="curl --retry 5 --retry-delay 1 --retry-max-time 120"
 CURL_DEBUG=$(parse_bool "${CURL_DEBUG}")
 [ "${CURL_DEBUG}" = "true" ] && CURL="${CURL} -v"
 
+# The log levels for the various kubernetes components.
+LOG_LEVEL_KUBERNETES="${LOG_LEVEL_KUBERNETES:-2}"
+LOG_LEVEL_KUBE_APISERVER="${LOG_LEVEL_KUBE_APISERVER:-${LOG_LEVEL_KUBERNETES}}"
+LOG_LEVEL_KUBE_SCHEDULER="${LOG_LEVEL_KUBE_SCHEDULER:-${LOG_LEVEL_KUBERNETES}}"
+LOG_LEVEL_KUBE_CONTROLLER_MANAGER="${LOG_LEVEL_KUBE_CONTROLLER_MANAGER:-${LOG_LEVEL_KUBERNETES}}"
+LOG_LEVEL_KUBELET="${LOG_LEVEL_KUBELET:-${LOG_LEVEL_KUBERNETES}}"
+LOG_LEVEL_KUBE_PROXY="${LOG_LEVEL_KUBE_PROXY:-${LOG_LEVEL_KUBERNETES}}"
+LOG_LEVEL_CLOUD_CONTROLLER_MANAGER="${LOG_LEVEL_CLOUD_CONTROLLER_MANAGER:-${LOG_LEVEL_KUBERNETES}}"
+
 # Set to true to install the service that runs the kubernetes e2e conformance
 # tests. Please note that RUN_CONFORMANCE_TESTS must be set to "true" to
 # run the tests.
@@ -233,7 +242,6 @@ CURL_DEBUG=$(parse_bool "${CURL_DEBUG}")
 # /var/lib/kubernetes/e2e/kubeconfig. This file is required by the
 # conformance tests. Setting INSTALL_CONFORMANCE_TESTS=false prevents
 # this file from being written to a worker node.
-INSTALL_CONFORMANCE_TESTS="${INSTALL_CONFORMANCE_TESTS:-true}"
 INSTALL_CONFORMANCE_TESTS=$(parse_bool "${INSTALL_CONFORMANCE_TESTS}")
 
 # Set to true to run the kubernetes e2e conformance test suite.
@@ -317,6 +325,19 @@ SERVICE_FQDN="${SERVICE_NAME}.default.svc.${SERVICE_DOMAIN}"
 # If CLOUD_PROVIDER=external then this value is inspected to
 # determine whiche external cloud-provider to use.
 CLOUD_PROVIDER_EXTERNAL="${CLOUD_PROVIDER_EXTERNAL:-vsphere}"
+
+# Used only when CLOUD_PROVIDER is set to "external". Please
+# note that CLOUD_PROVIDER_EXTERNAL must also be set to the
+# provider contained in the image specified by
+# CLOUD_PROVIDER_IMAGE. There is no attempt to ensure the
+# specified image is related to the specified provider.
+CLOUD_PROVIDER_IMAGE=${CLOUD_PROVIDER_IMAGE:-luoh/vsphere-cloud-controller-manager:latest}
+
+# Used only when CLOUD_PROVIDER is set to "external". The
+# podspec for the external CCM is amended with an
+# imagePullSecrets section. This value is a space-delimited
+# series of secret references added to that section.
+#CLOUD_PROVIDER_IMAGE_SECRETS=
 
 # Versions of the software packages installed on the controller and
 # worker nodes. Please note that not all the software packages listed
@@ -1330,16 +1351,9 @@ http {
       proxy_set_header X-Real-IP    \$remote_addr;
     }
 
-    location = /kubernetes-test.tar.gz {
-      alias /var/lib/kubernetes/kubernetes-test.tar.gz;
-    }
-
-    location = /kubectl {
-      alias /opt/bin/kubectl;
-    }
-
     location / {
-      return 301 http://bit.ly/cnx-cicd-notes;
+      return 200 '${K8S_ARTIFACT_PREFIX}';
+      add_header Content-Type text/plain;
     }
   }
 }
@@ -1774,7 +1788,7 @@ APISERVER_OPTS="--advertise-address=${IPV4_ADDRESS} \\
 --service-node-port-range=30000-32767 \\
 --tls-cert-file=/etc/ssl/kube-apiserver.crt \\
 --tls-private-key-file=/etc/ssl/kube-apiserver.key \\
---v=2"
+--v=${LOG_LEVEL_KUBE_APISERVER}"
 EOF
 
   cat <<EOF > /etc/systemd/system/kube-apiserver.service
@@ -1819,7 +1833,7 @@ CONTROLLER_OPTS="--address=0.0.0.0${CLOUD_PROVIDER_OPTS} \\
 --service-account-private-key-file=/etc/ssl/k8s-service-accounts.key \\
 --service-cluster-ip-range='${SERVICE_CIDR}' \\
 --use-service-account-credentials=true \\
---v=2"
+--v=${LOG_LEVEL_KUBE_CONTROLLER_MANAGER}"
 EOF
 
   cat <<EOF >/etc/systemd/system/kube-controller-manager.service
@@ -1864,7 +1878,7 @@ install_kube_scheduler() {
   cat <<EOF > /etc/default/kube-scheduler
 SCHEDULER_OPTS="--kubeconfig=/var/lib/kube-scheduler/kubeconfig \\
 --leader-elect=true \\
---v=2"
+--v=${LOG_LEVEL_KUBE_SCHEDULER}"
 EOF
 
   cat <<EOF > /etc/systemd/system/kube-scheduler.service
@@ -1929,7 +1943,7 @@ KUBELET_OPTS="--client-ca-file='${TLS_CA_CRT}'${EXT_CLOUD_PROVIDER_OPTS} \\
 --network-plugin=cni \\
 --node-ip=${IPV4_ADDRESS} \\
 --register-node=true \\
---v=2"
+--v=${LOG_LEVEL_KUBELET}"
 EOF
 
   cat <<EOF >/etc/systemd/system/kubelet.service
@@ -1976,7 +1990,7 @@ install_kube_proxy() {
 KUBE_PROXY_OPTS="--cluster-cidr='${CLUSTER_CIDR}' \\
 --kubeconfig='/var/lib/kube-proxy/kubeconfig' \\
 --proxy-mode='iptables' \\
---v=2"
+--v=${LOG_LEVEL_KUBE_PROXY}"
 EOF
 
   cat <<EOF >/etc/systemd/system/kube-proxy.service
@@ -2951,18 +2965,16 @@ spec:
     effect: NoSchedule
   containers:
     - name: vsphere-cloud-controller-manager
-      image: luoh/vsphere-cloud-controller-manager:latest
+      image: ${CLOUD_PROVIDER_IMAGE}
       args:
         - /bin/vsphere-cloud-controller-manager
-        - --v=4
         - --cloud-config=/etc/cloud/cloud-provider.conf
         - --cloud-provider=vsphere
-        - --cluster-cidr='${CLUSTER_CIDR}'
-        - --cluster-name='${CLUSTER_NAME}'
         - --use-service-account-credentials=true
         - --address=127.0.0.1
         - --leader-elect=false
         - --kubeconfig=/etc/cloud/kubeconfig
+        - --v=${LOG_LEVEL_CLOUD_CONTROLLER_MANAGER}
       volumeMounts:
         - mountPath: /etc/ssl/certs
           name: ca-certs-volume
@@ -2985,6 +2997,19 @@ spec:
     configMap:
       name: cloud-config
 EOF
+
+  # If there are secrets defined and used to pull the
+  # cloud provider image then add them to the podspec.
+  if [ -n "${CLOUD_PROVIDER_IMAGE_SECRETS}" ]; then
+      cat <<EOF >>/var/lib/kubernetes/ccm-vsphere.yaml
+  imagePullSecrets:
+EOF
+    for key in ${CLOUD_PROVIDER_IMAGE_SECRETS}; do
+      cat <<EOF >>/var/lib/kubernetes/ccm-vsphere.yaml
+    - name: ${key}
+EOF
+    done
+  fi
 
   # Deploy the podspec.
   kubectl create -f /var/lib/kubernetes/ccm-vsphere.yaml || \
@@ -3067,7 +3092,6 @@ items:
     verbs:
     - get
     - list
-    - watch
 - apiVersion: rbac.authorization.k8s.io/v1
   kind: ClusterRole
   metadata:
@@ -3097,22 +3121,6 @@ items:
     - create
     - patch
     - update
-  - apiGroups:
-    - ""
-    resources:
-    - secrets
-    verbs:
-    - get
-    - list
-    - watch
-  - apiGroups:
-    - ""
-    resources:
-    - serviceaccounts
-    verbs:
-    - get
-    - list
-    - watch
 - apiVersion: rbac.authorization.k8s.io/v1
   kind: ClusterRole
   metadata:
@@ -3586,13 +3594,13 @@ init_kubernetes_artifact_prefix() {
   # If the version points to a .txt file then its *that* file that contains
   # the actual version information.
   if echo "${K8S_VERSION}" | grep '\.txt$' >/dev/null 2>&1; then
-    K8S_REAL_VERSION=$(${CURL} -sL "${K8S_URL}/${K8S_VERSION}")
+    K8S_REAL_VERSION="$(${CURL} -sL "${K8S_URL}/${K8S_VERSION}")"
     K8S_VERSION_PREFIX=$(echo "${K8S_VERSION}" | awk -F/ '{print $1}')
-    K8S_VERSION=${K8S_VERSION_PREFIX}/${K8S_REAL_VERSION}
+    K8S_VERSION="${K8S_VERSION_PREFIX}/${K8S_REAL_VERSION}"
   fi
 
   # Init the kubernetes artifact URL prefix.
-  K8S_ARTIFACT_PREFIX=${K8S_URL}/${K8S_VERSION}
+  K8S_ARTIFACT_PREFIX="${K8S_URL}/${K8S_VERSION}"
 }
 
 download_kubernetes_node() {
