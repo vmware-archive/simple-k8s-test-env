@@ -229,19 +229,20 @@ LOG_LEVEL_KUBELET="${LOG_LEVEL_KUBELET:-${LOG_LEVEL_KUBERNETES}}"
 LOG_LEVEL_KUBE_PROXY="${LOG_LEVEL_KUBE_PROXY:-${LOG_LEVEL_KUBERNETES}}"
 LOG_LEVEL_CLOUD_CONTROLLER_MANAGER="${LOG_LEVEL_CLOUD_CONTROLLER_MANAGER:-${LOG_LEVEL_KUBERNETES}}"
 
-# Set to true to install the service that runs the kubernetes e2e conformance
-# tests. Please note that RUN_CONFORMANCE_TESTS must be set to "true" to
-# run the tests.
+# Set to true to install the kubernetes e2e conformance test dependencies:
 #
-# The conformance test suite is installed to the first node that is not
-# explcitly a control-plane node. This is due to the fact that worker
-# nodes generally have more compute resources.
+#   * Downloads this cluster's kubernetes-test.tar.gz to each worker
+#     node and inflates the archive to /var/lib/kubernetes/e2e while
+#     stripping the first path component from the archive.
 #
-# Additionally, installing the conformance tests to a worker node *does*
-# introduce a security risk as an admin kubeconfig file is written to
-# /var/lib/kubernetes/e2e/kubeconfig. This file is required by the
-# conformance tests. Setting INSTALL_CONFORMANCE_TESTS=false prevents
-# this file from being written to a worker node.
+#   * Creates the "e2e" namespace.
+#
+#   * Creates a secret named "kubeconfig" in the "e2e" namespace. This
+#     secret may be mounted as a volume to /etc/kubernetes to the image
+#     gcr.io/kubernetes-conformance-testing/vk8s-conformance in order
+#     to provide the container with a kubeconfig that can be used to
+#     run the e2e tests.
+INSTALL_CONFORMANCE_TESTS="${INSTALL_CONFORMANCE_TESTS:-true}"
 INSTALL_CONFORMANCE_TESTS=$(parse_bool "${INSTALL_CONFORMANCE_TESTS}")
 
 # Set to true to run the kubernetes e2e conformance test suite.
@@ -1301,6 +1302,16 @@ create_dns_entries() {
   etcdctl put "/skydns/arpa/in-addr/${addr_slashes}" '{"host":"'"${HOST_FQDN}"'"}' || \
     { error "failed to create DNS reverse lookup record"; return; }
   etcdctl get "/skydns/arpa/in-addr/${addr_slashes}"
+
+  # If EXTERNAL_FQDN is defined then create a CNAME record for it
+  # that points to CLUSTER_FQDN.
+  if [ -n "${EXTERNAL_FQDN}" ]; then
+    echo "creating DNS CNAME record for external cluster FQDN"
+    external_fqdn_rev=$(reverse_fqdn "${EXTERNAL_FQDN}")
+    etcdctl put "/skydns/${external_fqdn_rev}" '{"host":"'"${CLUSTER_FQDN}"'"}'
+    echo "created external FQDN DNS CNAME record"
+    etcdctl get "/skydns/${external_fqdn_rev}"
+  fi
 }
 
 install_nginx() {
@@ -1351,8 +1362,13 @@ http {
       proxy_set_header X-Real-IP    \$remote_addr;
     }
 
-    location / {
+    location = /artifactz {
       return 200 '${K8S_ARTIFACT_PREFIX}';
+      add_header Content-Type text/plain;
+    }
+
+    location = /e2e/job.yaml {
+      alias /var/lib/kubernetes/e2e-job.yaml;
       add_header Content-Type text/plain;
     }
   }
@@ -1413,16 +1429,19 @@ install_coredns() {
     new_cert) || \
     { error "failed to generate x509 cert/key pair for CoreDNS"; return; }
 
+  dns_zones="${NETWORK_DOMAIN} 0.0.0.0/0"
+  [ -n "${EXTERNAL_FQDN}" ] && dns_zones="${EXTERNAL_FQDN}. ${dns_zones}"
+
   echo "writing /etc/coredns/Corefile"
   cat <<EOF > /etc/coredns/Corefile
 . {
     log
     errors
-    etcd ${NETWORK_DOMAIN} 0.0.0.0/0 {
+    etcd ${dns_zones} {
         stubzones
         path /skydns
         endpoint https://127.0.0.1:2379
-        upstream ${NETWORK_DNS_1}:53 ${NETWORK_DNS_2}:53
+        upstream 127.0.0.1:53
         tls /etc/ssl/coredns.crt /etc/ssl/coredns.key ${TLS_CA_CRT}
     }
     prometheus
@@ -2018,111 +2037,6 @@ EOF
   echo "starting kube-proxy.service"
   systemctl -l start kube-proxy.service || \
     { error "failed to start kube-proxy.service"; return; }
-}
-
-# Installs, but does not start, the service that runs the kubernetes
-# e2e conformance tests. Even if there are multiple worker nodes,
-# the service and its assets are installed on the first worker node 
-# only.
-install_kube_conformance() {
-
-  if [ ! "${INSTALL_CONFORMANCE_TESTS}" = "true" ]; then
-    echo "installation of the kubernetes e2e conformance test service is disabled"
-    return
-  fi
-
-  # Find the first non-controller node in the cluster.
-  if ! node_json=$(etcdctl get /yakity/nodes \
-    --sort-by=KEY --prefix --print-value-only | \
-    jq -rs 'limit(1; .[] | select (.node_type != "controller"))'); then
-    error "failed to find the first non-controller node in the cluster"; return
-  fi
-
-  # Get the IPv4 address of the first non-controller node.
-  if ! ipv4_address=$(echo "${node_json}" | jq -rs '.[] | .ipv4_address'); then
-    error "failed to parse json for ipv4 address: ${node_json}"; return
-  fi
-
-  if [ ! "${ipv4_address}" = "${IPV4_ADDRESS}" ]; then
-    # Get the host FQDN of the first non-controller node.
-    host_fqdn=$(echo "${node_json}" | jq -rs '.[] | .host_fqdn')
-    echo "kube-conformance installed on ${host_fqdn}, ${ipv4_address}"
-    return
-  fi
-
-  echo "installing the kubernetes e2e conformance test service"
-
-  E2E_DIR=/var/lib/kubernetes/e2e
-  E2E_BIN=${E2E_DIR}/platforms/linux/amd64/e2e.test
-  E2E_LOG_DIR=/var/log/kube-conformance
-  E2E_KUBECONFIG="${E2E_DIR}/kubeconfig"
-
-  echo "creating the e2e directories"
-  mkdir -p "${E2E_DIR}"
-
-  echo "fetching shared public k8s-admin kubeconfig"
-  fetch_kubeconfig "${shared_kfg_public_admin_key}" \
-                    "${E2E_KUBECONFIG}" || \
-    { error "failed to fetch shared k8s-admin kubeconfig"; return; }
-
-  cat <<EOF >/opt/bin/download-kubernetes-test.sh
-#!/bin/sh
-{ [ -f "${E2E_BIN}" ] && exit 0; } || mkdir -p "${E2E_DIR}"
-K8S_ARTIFACT="${K8S_ARTIFACT_PREFIX}/kubernetes-test.tar.gz"
-${CURL} -L "\${K8S_ARTIFACT}" | tar -xzvC "${E2E_DIR}" \
-  --exclude='kubernetes/platforms/darwin' \
-  --exclude='kubernetes/platforms/windows' \
-  --exclude='kubernetes/platforms/linux/arm' \
-  --exclude='kubernetes/platforms/linux/arm64' \
-  --exclude='kubernetes/platforms/linux/ppc64le' \
-  --exclude='kubernetes/platforms/linux/s390x' \
-  --strip-components=1
-exit_code="\${?}" && [ "\${exit_code}" -gt "1" ] && exit "\${exit_code}"
-exit 0
-EOF
-
-  chmod 0755 /opt/bin/download-kubernetes-test.sh
-
-  cat <<EOF >/opt/bin/run-kube-conformance.sh
-#!/bin/sh
-/opt/bin/download-kubernetes-test.sh || exit "${?}"
-mkdir -p "${E2E_LOG_DIR}/_artifacts"
-export KUBECONFIG="${E2E_KUBECONFIG}"
-${E2E_BIN} \\
-  -ginkgo.focus '\\[Conformance\\]' \\
-  -ginkgo.skip 'Alpha|Kubectl|\\[(Disruptive|Feature:[^\\]]+|Flaky)\\]' \\
-  -- \\
-  --disable-log-dump \\
-  --report-dir="${E2E_LOG_DIR}" | \\
-  tee "${E2E_LOG_DIR}/e2e.log"
-EOF
-
-  chmod 0755 /opt/bin/run-kube-conformance.sh
-
-  cat <<EOF >/etc/systemd/system/kube-conformance.service
-[Unit]
-Description=Kubernetes Conformance Tests
-Documentation=https://github.com/kubernetes/test-infra
-After=kubelet.service kube-proxy.service
-Requires=kubelet.service kube-proxy.service
-
-[Service]
-Type=simple
-Restart=no
-WorkingDirectory=${E2E_DIR}
-EnvironmentFile=/etc/default/path
-ExecStart=/opt/bin/run-kube-conformance.sh
-EOF
-
-  echo "enabling kube-conformance.service"
-  systemctl -l enable kube-conformance.service || \
-    { error "failed to enable kube-conformance.service"; return; }
-
-  if [ "${RUN_CONFORMANCE_TESTS}" = "true" ]; then
-    echo "starting kube-conformance.service"
-    systemctl -l start kube-conformance.service || \
-      { error "failed to start kube-conformance.service"; return; }
-  fi
 }
 
 fetch_tls() {
@@ -3395,6 +3309,105 @@ apply_rbac_and_manifests() {
     { error "failed to apply manifest-after-rbac-2"; return; }
 }
 
+install_kubernetes_test() {
+  [ "${INSTALL_CONFORMANCE_TESTS}" = "true" ] || return 0
+
+  echo "installing e2e"
+
+  echo "creating e2e job yaml"
+  cat <<EOF >/var/lib/kubernetes/e2e-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: e2e
+  namespace: e2e
+  labels:
+    name: e2e
+spec:
+  template:
+    spec:
+      volumes:
+      - name: kubectl
+        hostPath:
+          path: /opt/bin/kubectl
+          type: File
+      - name: kubeconfig
+        secret:
+          secretName: kubeconfig
+      - name: e2e
+        hostPath:
+          path: /var/lib/kubernetes/e2e
+          type: Directory
+      containers:
+      - name: e2e
+        image: gcr.io/kubernetes-conformance-testing/yake2e-job
+        volumeMounts:
+        - name: kubectl
+          mountPath: /usr/local/bin/kubectl
+          readOnly: true
+        - name: kubeconfig
+          mountPath: /etc/kubernetes
+          readOnly: true
+        - name: e2e
+          mountPath: /var/lib/kubernetes/e2e
+          readOnly: true
+      restartPolicy: Never
+  backoffLimit: 4
+EOF
+
+  # Make sure everyone can read the file.
+  chmod 0644 /var/lib/kubernetes/e2e-job.yaml
+
+  # Stores the name of the init node.
+  init_node_key="/yakity/e2e"
+
+  # Check to see if the init routine has already run on another node.
+  name_of_init_node=$(etcdctl get --print-value-only "${init_node_key}") || \
+    { error "failed to get name of init node for e2e"; return; }
+
+  if [ -n "${name_of_init_node}" ]; then
+    echo "e2e has already been applied on ${name_of_init_node}"
+    return
+  fi
+
+  # Let other nodes know that this node has run the init routine.
+  put_string "${init_node_key}" "${HOST_FQDN}" || \
+    { error "error applying e2e"; return; }
+
+  cat <<EOF >/var/lib/kubernetes/e2e-namespace.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: e2e
+  labels:
+    name: e2e
+EOF
+
+  # Create the e2e namespace.
+  echo "creating e2e namespace"
+  kubectl create -f /var/lib/kubernetes/e2e-namespace.yaml || \
+    { error "failed to create e2e namespace"; return; }
+
+  echo "fetching shared public k8s-admin kubeconfig"
+  fetch_kubeconfig "${shared_kfg_public_admin_key}" \
+                   /var/lib/kubernetes/e2e.kubeconfig || \
+    { error "failed to fetch e2e kubeconfig"; return; }
+
+  echo "creating e2e secret kubeconfig"
+  kubectl create -n e2e secret generic kubeconfig \
+    --from-file=kubeconfig=/var/lib/kubernetes/e2e.kubeconfig || \
+    { error "failed to create e2e kubeconfig"; return; }
+  rm -f /var/lib/kubernetes/e2e.kubeconfig
+
+  echo "installed e2e"
+
+  if [ "${RUN_CONFORMANCE_TESTS}" = "true" ]; then
+    echo "running conformance tests"
+    kubectl -n e2e create -f /var/lib/kubernetes/e2e-job.yaml || \
+    { error "failed to start e2e job"; return; }
+  fi
+}
+
 install_kubernetes() {
   echo "installing kubernetes"
 
@@ -3442,12 +3455,14 @@ EOF
 
     do_with_lock apply_rbac_and_manifests || return
 
-    # Wait until RBAC is configured to install kube-controller-manager
-    # and kube-scheduler.
+    # Wait until RBAC is configured to install kube-controller-manager,
+    # kube-scheduler, and kubernetes-test.
     install_kube_controller_manager || \
       { error "failed to install kube-controller-manager"; return; }
     install_kube_scheduler || \
       { error "failed to install kube-scheduler"; return; }
+    do_with_lock install_kubernetes_test || \
+      { error "failed to install kubernetes-test"; return; }
 
     # Deploy CoreDNS to kubernetes for kubernetes service DNS resolution.
     do_with_lock apply_service_dns || \
@@ -3633,13 +3648,23 @@ download_kubernetes_server() {
 }
 
 download_kubernetes_test() {
-  mkdir -p /var/lib/kubernetes; chmod 0755 /var/lib/kubernetes
+  [ "${INSTALL_CONFORMANCE_TESTS}" = "true" ] || return 0
+  mkdir -p /var/lib/kubernetes/e2e; chmod 0755 /var/lib/kubernetes/e2e
   K8S_ARTIFACT="${K8S_ARTIFACT_PREFIX}/kubernetes-test.tar.gz"
   echo "downloading ${K8S_ARTIFACT}"
-  ${CURL} -Lo /var/lib/kubernetes/kubernetes-test.tar.gz \
-    "${K8S_ARTIFACT}" || \
-    { error "failed to download kubernetes test"; return; }
-  chmod 0644 /var/lib/kubernetes/kubernetes-test.tar.gz
+  ${CURL} -L "${K8S_ARTIFACT}" | \
+    tar -xzvC /var/lib/kubernetes/e2e \
+      --exclude='kubernetes/platforms/darwin' \
+      --exclude='kubernetes/platforms/windows' \
+      --exclude='kubernetes/platforms/linux/arm' \
+      --exclude='kubernetes/platforms/linux/arm64' \
+      --exclude='kubernetes/platforms/linux/ppc64le' \
+      --exclude='kubernetes/platforms/linux/s390x' \
+      --strip-components=1
+  exit_code="${?}" && \
+    [ "${exit_code}" -gt "1" ] && \
+    { error "failed to download kubernetes test" "${exit_code}"; return; }
+  return 0
 }
 
 download_nginx() {
@@ -3709,7 +3734,6 @@ download_binaries() {
   # Download binaries found only on control-plane nodes.
   if [ ! "${NODE_TYPE}" = "worker" ]; then
     download_kubernetes_server || { error "failed to download kubernetes server"; return; }
-    download_kubernetes_test   || { error "failed to download kubernetes test"; return; }
     download_nginx             || { error "failed to download nginx"; return; }
     download_coredns           || { error "failed to download coredns"; return; }
   fi
@@ -3717,6 +3741,7 @@ download_binaries() {
   # Download binaries found only on worker nodes.
   if [ ! "${NODE_TYPE}" = "controller" ]; then
     download_kubernetes_node || { error "failed to download kubernetes node"; return; }
+    download_kubernetes_test || { error "failed to download kubernetes test"; return; }
     download_containerd      || { error "failed to download containerd"; return; }
     download_crictl          || { error "failed to download crictl"; return; }
     download_runc            || { error "failed to download runc"; return; }
