@@ -331,7 +331,7 @@ CLOUD_PROVIDER_EXTERNAL="${CLOUD_PROVIDER_EXTERNAL:-vsphere}"
 # provider contained in the image specified by
 # CLOUD_PROVIDER_IMAGE. There is no attempt to ensure the
 # specified image is related to the specified provider.
-CLOUD_PROVIDER_IMAGE=${CLOUD_PROVIDER_IMAGE:-luoh/vsphere-cloud-controller-manager:latest}
+CLOUD_PROVIDER_IMAGE=${CLOUD_PROVIDER_IMAGE:-gcr.io/cloud-provider-vsphere/vsphere-cloud-controller-manager:latest}
 
 # Used only when CLOUD_PROVIDER is set to "external". The
 # podspec for the external CCM is amended with an
