@@ -3338,9 +3338,13 @@ spec:
         hostPath:
           path: /var/lib/kubernetes/e2e
           type: Directory
+      - name: artifacts
+        emptyDir: {}
       containers:
-      - name: e2e
+      - name: run
         image: gcr.io/kubernetes-conformance-testing/yake2e-job
+        args:
+        - run
         volumeMounts:
         - name: kubectl
           mountPath: /usr/local/bin/kubectl
@@ -3351,6 +3355,17 @@ spec:
         - name: e2e
           mountPath: /var/lib/kubernetes/e2e
           readOnly: true
+        - name: artifacts
+          mountPath: /var/log/kubernetes/e2e
+          readOnly: false
+      - name: tgz
+        image: gcr.io/kubernetes-conformance-testing/yake2e-job
+        args:
+        - tgz
+        volumeMounts:
+        - name: artifacts
+          mountPath: /var/log/kubernetes/e2e
+          readOnly: false
       restartPolicy: Never
   backoffLimit: 4
 EOF
