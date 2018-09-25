@@ -3527,10 +3527,6 @@ EOF
       { error "failed to install kubelet"; return; }
     install_kube_proxy || \
       { error "failed to install kube-proxy"; return; }
-
-    # Install the kube-conformance service (when appropriate).
-    install_kube_conformance || \
-      { error "failed to install kube-conformance"; return; }
   fi
 }
 
