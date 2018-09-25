@@ -3614,7 +3614,7 @@ init_kubernetes_artifact_prefix() {
   # If the version is ci/latest, release/latest, or release/stable then 
   # append .txt to the version string so the next if block gets triggered.
   if echo "${K8S_VERSION}" | \
-    grep '^\(ci/latest\)\|\(release/\(latest\|stable\)\)$' >/dev/null 2>&1; then
+    grep '^\(ci/latest\)\|\(release/\(latest\|stable\)\)' >/dev/null 2>&1; then
     K8S_VERSION="${K8S_VERSION}.txt"
   fi
 
