@@ -358,7 +358,7 @@ CLOUD_PROVIDER_IMAGE=${CLOUD_PROVIDER_IMAGE:-gcr.io/cloud-provider-vsphere/vsphe
 K8S_VERSION="${K8S_VERSION:-release/stable}"
 
 CNI_PLUGINS_VERSION="${CNI_PLUGINS_VERSION:-0.7.1}"
-CONTAINERD_VERSION="${CONTAINERD_VERSION:-1.2.0-beta.2}"
+CONTAINERD_VERSION="${CONTAINERD_VERSION:-1.1.4}"
 COREDNS_VERSION="${COREDNS_VERSION:-1.2.2}"
 CRICTL_VERSION="${CRICTL_VERSION:-1.11.1}"
 ETCD_VERSION="${ETCD_VERSION:-3.3.9}"
@@ -1700,8 +1700,24 @@ install_containerd() {
             /var/lib/containerd \
             /var/run/containerd
 
-  echo "writing /etc/containerd/config.toml"
-  cat <<EOF >/etc/containerd/config.toml
+  if echo "${CONTAINERD_VERSION}" | grep -q '^1.1'; then
+    echo "writing 1.1.x /etc/containerd/config.toml"
+    cat <<EOF >/etc/containerd/config.toml
+[plugins]
+  [plugins.cri.containerd]
+    snapshotter = "overlayfs"
+    [plugins.cri.containerd.default_runtime]
+      runtime_type = "io.containerd.runtime.v1.linux"
+      runtime_engine = "/opt/bin/runc"
+      runtime_root = ""
+    [plugins.cri.containerd.untrusted_workload_runtime]
+      runtime_type = "io.containerd.runtime.v1.linux"
+      runtime_engine = "/opt/bin/runsc"
+      runtime_root = "/var/run/containerd/runsc"
+EOF
+  else
+    echo "writing 1.2.x /etc/containerd/config.toml"
+    cat <<EOF >/etc/containerd/config.toml
 root = "/var/lib/containerd"
 state = "/var/run/containerd"
 subreaper = true
@@ -1725,6 +1741,7 @@ subreaper = true
       runtime_engine = "/opt/bin/runsc"
       runtime_root = "/var/run/containerd/runsc"
 EOF
+fi
 
   echo "writing /etc/systemd/system/containerd.service"
   cat <<EOF >/etc/systemd/system/containerd.service
@@ -3567,7 +3584,7 @@ download_jq() {
   JQ_ARTIFACT="${JQ_URL}/jq-${JQ_VERSION}/jq-linux64"
   echo "downloading ${JQ_ARTIFACT}"
   ${CURL} -Lo "${BIN_DIR}/jq" "${JQ_ARTIFACT}" || \
-    error "failed to download jq"
+    error "failed to download ${JQ_ARTIFACT}"
 }
 
 download_etcd() {
@@ -3579,7 +3596,7 @@ download_etcd() {
     "${BIN_DIR}" '*/etcd' '*/etcdctl'
   exit_code="${?}" && \
     [ "${exit_code}" -gt "1" ] && \
-    { error "failed to download etcd" "${exit_code}"; return; }
+    { error "failed to download ${ETCD_ARTIFACT}" "${exit_code}"; return; }
   
   # If the node is a worker then it doesn't need to install the etcd server.
   [ "${NODE_TYPE}" = "worker" ] && rm -fr "${BIN_DIR}/etcd"
@@ -3599,7 +3616,7 @@ download_coredns() {
 
   echo "downloading ${COREDNS_ARTIFACT}"
   ${CURL} -L "${COREDNS_ARTIFACT}" | tar -xzvC "${BIN_DIR}" || \
-    error "failed to download coredns"
+    error "failed to download ${COREDNS_ARTIFACT}"
 }
 
 init_kubernetes_artifact_prefix() {
@@ -3614,7 +3631,7 @@ init_kubernetes_artifact_prefix() {
   # If the version is ci/latest, release/latest, or release/stable then 
   # append .txt to the version string so the next if block gets triggered.
   if echo "${K8S_VERSION}" | \
-    grep '^\(ci/latest\)\|\(release/\(latest\|stable\)\)' >/dev/null 2>&1; then
+    grep -q '^\(ci/latest\)\|\(\(release/\(latest\|stable\)\)\(-[[:digit:]]\{1,\}\.[[:digit:]]\{1,\}\)\{0,1\}\)$'; then
     K8S_VERSION="${K8S_VERSION}.txt"
   fi
 
@@ -3640,7 +3657,7 @@ download_kubernetes_node() {
       'kubernetes/node/bin/*'
   exit_code="${?}" && \
     [ "${exit_code}" -gt "1" ] && \
-    { error "failed to download kubernetes node" "${exit_code}"; return; }
+    { error "failed to download ${K8S_ARTIFACT}" "${exit_code}"; return; }
   return 0
 }
 
@@ -3654,7 +3671,7 @@ download_kubernetes_server() {
     'kubernetes/server/bin/*'
   exit_code="${?}" && \
     [ "${exit_code}" -gt "1" ] && \
-    { error "failed to download kubernetes server" "${exit_code}"; return; }
+    { error "failed to download ${K8S_ARTIFACT}" "${exit_code}"; return; }
   return 0
 }
 
@@ -3674,7 +3691,16 @@ download_kubernetes_test() {
       --strip-components=1
   exit_code="${?}" && \
     [ "${exit_code}" -gt "1" ] && \
-    { error "failed to download kubernetes test" "${exit_code}"; return; }
+    { error "failed to download ${K8S_ARTIFACT}" "${exit_code}"; return; }
+
+  K8S_ARTIFACT="${K8S_ARTIFACT_PREFIX}/kubernetes.tar.gz"
+  echo "downloading ${K8S_ARTIFACT}"
+  ${CURL} -L "${K8S_ARTIFACT}" | \
+    tar -xzvC /var/lib/kubernetes/e2e --strip-components=1
+  exit_code="${?}" && \
+    [ "${exit_code}" -gt "1" ] && \
+    { error "failed to download ${K8S_ARTIFACT}" "${exit_code}"; return; }
+
   return 0
 }
 
@@ -3683,7 +3709,7 @@ download_nginx() {
   NGINX_ARTIFACT="${NGINX_URL}/v${NGINX_VERSION}/nginx.tar.gz"
   echo "downloading ${NGINX_ARTIFACT}"
   ${CURL} -L "${NGINX_ARTIFACT}" | tar -xzvC "${BIN_DIR}" || \
-    error "failed to download nginx"
+    error "failed to download ${NGINX_ARTIFACT}"
 }
 
 download_containerd() {
@@ -3694,7 +3720,7 @@ download_containerd() {
     tar -xzvC "${BIN_DIR}" --strip-components=1
   exit_code="${?}" && \
     [ "${exit_code}" -gt "1" ] && \
-    { error "failed to download containerd" "${exit_code}"; return; }
+    { error "failed to download ${CONTAINERD_ARTIFACT}" "${exit_code}"; return; }
   return 0
 }
 
@@ -3705,7 +3731,7 @@ download_cni_plugins() {
   CNI_PLUGINS_ARTIFACT="${CNI_PLUGINS_URL}/v${CNI_PLUGINS_VERSION}/cni-plugins-amd64-v${CNI_PLUGINS_VERSION}.tgz"
   echo "downloading ${CNI_PLUGINS_ARTIFACT}"
   ${CURL} -L "${CNI_PLUGINS_ARTIFACT}" | tar -xzvC "${CNI_BIN_DIR}" || \
-    error "failed to download cni plug-ins"
+    error "failed to download ${CNI_PLUGINS_ARTIFACT}"
 }
 
 download_crictl() {
@@ -3713,7 +3739,7 @@ download_crictl() {
   CRICTL_ARTIFACT="${CRICTL_URL}/v${CRICTL_VERSION}/crictl-v${CRICTL_VERSION}-linux-amd64.tar.gz"
   echo "downloading ${CRICTL_ARTIFACT}"
   ${CURL} -L "${CRICTL_ARTIFACT}" | tar -xzvC "${BIN_DIR}" || \
-    error "failed to download crictl"
+    error "failed to download ${CRICTL_ARTIFACT}"
 }
 
 download_runc() {
@@ -3721,7 +3747,7 @@ download_runc() {
   RUNC_ARTIFACT="${RUNC_URL}/v${RUNC_VERSION}/runc.amd64"
   echo "downloading ${RUNC_ARTIFACT}"
   ${CURL} -Lo "${BIN_DIR}/runc" "${RUNC_ARTIFACT}" || \
-    error "failed to download runc"
+    error "failed to download ${RUNC_ARTIFACT}"
 }
 
 download_runsc() {
@@ -3729,7 +3755,7 @@ download_runsc() {
   RUNSC_ARTIFACT="${RUNSC_URL}/${RUNSC_VERSION}/runsc"
   echo "downloading ${RUNSC_ARTIFACT}"
   ${CURL} -Lo "${BIN_DIR}/runsc" "${RUNSC_ARTIFACT}" || \
-    error "failed to download runsc"
+    error "failed to download ${RUNSC_ARTIFACT}"
 }
 
 download_binaries() {
