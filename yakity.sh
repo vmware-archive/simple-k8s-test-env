@@ -3370,7 +3370,7 @@ spec:
           mountPath: /etc/kubernetes
           readOnly: true
         - name: e2e
-          mountPath: /var/lib/kubernetes/e2e
+          mountPath: /var/lib/kubernetes
           readOnly: true
         - name: artifacts
           mountPath: /var/log/kubernetes/e2e
