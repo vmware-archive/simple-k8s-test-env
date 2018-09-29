@@ -1969,7 +1969,8 @@ tlsPrivateKeyFile: /etc/ssl/kubelet.key
 EOF
 
   cat <<EOF >/etc/default/kubelet
-KUBELET_OPTS="--client-ca-file='${TLS_CA_CRT}'${EXT_CLOUD_PROVIDER_OPTS} \\
+KUBELET_OPTS="--allow-privileged \\
+--client-ca-file='${TLS_CA_CRT}'${EXT_CLOUD_PROVIDER_OPTS} \\
 --cni-bin-dir=/opt/bin/cni \\
 --config=/var/lib/kubelet/kubelet-config.yaml \\
 --container-runtime=remote \
