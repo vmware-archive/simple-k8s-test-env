@@ -189,7 +189,9 @@ NETWORK_DNS_SEARCH="${NETWORK_DNS_SEARCH:-${NETWORK_DOMAIN}}"
 
 # The number of seconds the keys associated with yakity will exist
 # before being removed by the etcd server.
-ETCD_LEASE_TTL=${ETCD_LEASE_TTL:-300}
+#
+# The default value is 15 minutes.
+ETCD_LEASE_TTL=${ETCD_LEASE_TTL:-900}
 
 # Set to "true" to configure IP tables to allow all 
 # inbound and outbond connections.
