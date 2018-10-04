@@ -365,7 +365,6 @@ COREDNS_VERSION="${COREDNS_VERSION:-1.2.2}"
 CRICTL_VERSION="${CRICTL_VERSION:-1.11.1}"
 ETCD_VERSION="${ETCD_VERSION:-3.3.9}"
 JQ_VERSION="${JQ_VERSION:-1.5}"
-VERSION="${VERSION:-kubernetes}"
 NGINX_VERSION="${NGINX_VERSION:-1.14.0}"
 RUNC_VERSION="${RUNC_VERSION:-1.0.0-rc5}"
 RUNSC_VERSION="${RUNSC_VERSION:-2018-09-01}"
@@ -581,6 +580,39 @@ retry_until_0() {
     sleep 3; i=$((i+1))
   done
   { is_debug && echo "${msg}: success"; } || echo "✓"
+}
+
+# Parses K8S_VERSION and returns the URL used to access the Kubernetes
+# artifacts for the provided version string.
+get_k8s_artifacts_url() {
+  { [ -z "${1}" ] && return 1; } || ver="${1}"
+
+  # If the version begins with https?:// then the version *is* the
+  # artifact prefix.
+  echo "${ver}" | grep -iq '^https\{0,1\}://' && echo "${ver}" && return 0
+
+  # Determine if the version points to a release or a CI build.
+  url=https://storage.googleapis.com/kubernetes-release
+
+  # If the version does *not* begin with release/ then it's a dev version.
+  echo "${ver}" | grep -q '^release/' || url=${url}-dev
+
+  # If the version is ci/latest, release/latest, or release/stable then
+  # append .txt to the version string so the next if block gets triggered.
+  echo "${ver}" | \
+    grep -q '^\(ci/latest\)\|\(\(release/\(latest\|stable\)\)\(-[[:digit:]]\{1,\}\(\.[[:digit:]]\{1,\}\)\{0,1\}\)\{0,1\}\)$' && \
+    ver="${ver}.txt"
+
+  # If the version points to a .txt file then its *that* file that contains
+  # the actual version information.
+  if echo "${ver}" | grep -q '\.txt$'; then
+    ver_real="$(curl -sSL "${url}/${ver}")"
+    ver_prefix=$(echo "${ver}" | awk -F/ '{print $1}')
+    ver="${ver_prefix}/${ver_real}"
+  fi
+
+  # Return the artifact URL.
+  echo "${url}/${ver}" && return 0
 }
 
 # Reverses an FQDN and substitutes slash characters for periods.
@@ -3622,34 +3654,6 @@ download_coredns() {
     error "failed to download ${COREDNS_ARTIFACT}"
 }
 
-init_kubernetes_artifact_prefix() {
-  # Determine if the version points to a release or a CI build.
-  K8S_URL=https://storage.googleapis.com/kubernetes-release
-
-  # If the version does *not* begin with release/ then it's a dev version.
-  if ! echo "${K8S_VERSION}" | grep '^release/' >/dev/null 2>&1; then
-    K8S_URL=${K8S_URL}-dev
-  fi
-
-  # If the version is ci/latest, release/latest, or release/stable then 
-  # append .txt to the version string so the next if block gets triggered.
-  if echo "${K8S_VERSION}" | \
-    grep -q '^\(ci/latest\)\|\(\(release/\(latest\|stable\)\)\(-[[:digit:]]\{1,\}\.[[:digit:]]\{1,\}\)\{0,1\}\)$'; then
-    K8S_VERSION="${K8S_VERSION}.txt"
-  fi
-
-  # If the version points to a .txt file then its *that* file that contains
-  # the actual version information.
-  if echo "${K8S_VERSION}" | grep '\.txt$' >/dev/null 2>&1; then
-    K8S_REAL_VERSION="$(${CURL} -sL "${K8S_URL}/${K8S_VERSION}")"
-    K8S_VERSION_PREFIX=$(echo "${K8S_VERSION}" | awk -F/ '{print $1}')
-    K8S_VERSION="${K8S_VERSION_PREFIX}/${K8S_REAL_VERSION}"
-  fi
-
-  # Init the kubernetes artifact URL prefix.
-  K8S_ARTIFACT_PREFIX="${K8S_URL}/${K8S_VERSION}"
-}
-
 download_kubernetes_node() {
   K8S_ARTIFACT="${K8S_ARTIFACT_PREFIX}/kubernetes-node-linux-amd64.tar.gz"
   echo "downloading ${K8S_ARTIFACT}"
@@ -3766,11 +3770,6 @@ download_binaries() {
   download_jq   || { error "failed to download jq"; return; }
   download_etcd || { error "failed to download etcd"; return; }
 
-  # Initialize the kubernetes artifact prefix.
-  init_kubernetes_artifact_prefix || \
-    { error "failed to init kubernetes artifact prefix jq"; return; }
-  echo "initialized kubernetes artifact prefix=${K8S_ARTIFACT_PREFIX}"
-
   # Download binaries found only on control-plane nodes.
   if [ ! "${NODE_TYPE}" = "worker" ]; then
     download_kubernetes_server || { error "failed to download kubernetes server"; return; }
@@ -3820,6 +3819,11 @@ wait_for_network() {
   retry_until_0 "waiting for network" ping -c1 www.google.com
 }
 
+init_k8s_artifact_prefix() {
+  K8S_ARTIFACT_PREFIX="$(get_k8s_artifacts_url "${K8S_VERSION}")" ||
+    error "failed to init k8s artifact prefix from '${K8S_VERSION}'"
+}
+
 # Writes /etc/profile.d/prompt.sh to provide shells with a sane prompt.
 configure_prompt || fatal "failed to configure prompt"
 
@@ -3830,6 +3834,12 @@ wait_for_network || fatal "failed to wait for network"
 # is available, to install socat and conntrack if either are not in the
 # current path.
 install_packages || fatal "failed to install packages"
+
+# Initalize the kubernetes artifact prefix. This sets the global
+# variable K8S_ARTIFACT_PREFIX to the URL from which to download the
+# kubernetes artifacts. The artifact prefix is determined by parsing
+# K8S_VERSION.
+init_k8s_artifact_prefix || fatal "failed to init k8s artifact prefix"
 
 # Download the binaries before doing almost anything else.
 download_binaries || fatal "failed to download binaries"
