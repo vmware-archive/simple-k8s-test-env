@@ -234,14 +234,13 @@ LOG_LEVEL_CLOUD_CONTROLLER_MANAGER="${LOG_LEVEL_CLOUD_CONTROLLER_MANAGER:-${LOG_
 # Set to true to install the kubernetes e2e conformance test dependencies:
 #
 #   * Downloads this cluster's kubernetes-test.tar.gz to each worker
-#     node and inflates the archive to /var/lib/kubernetes/e2e while
-#     stripping the first path component from the archive.
+#     node and inflates the archive to /var/lib.
 #
 #   * Creates the "e2e" namespace.
 #
 #   * Creates a secret named "kubeconfig" in the "e2e" namespace. This
 #     secret may be mounted as a volume to /etc/kubernetes to the image
-#     gcr.io/kubernetes-conformance-testing/vk8s-conformance in order
+#     gcr.io/kubernetes-conformance-testing/yake2e-job in order
 #     to provide the container with a kubeconfig that can be used to
 #     run the e2e tests.
 INSTALL_CONFORMANCE_TESTS="${INSTALL_CONFORMANCE_TESTS:-true}"
@@ -351,7 +350,26 @@ CLOUD_PROVIDER_IMAGE=${CLOUD_PROVIDER_IMAGE:-gcr.io/cloud-provider-vsphere/vsphe
 # K8S_VERSION may be set to:
 #
 #    * release/(latest|stable|<version>)
+#      A pattern that matches one of the builds staged in the public
+#      GCS bucket kubernetes-release
+#
 #    * ci/(latest|<version>)
+#      A pattern that matches one of the builds staged in the public
+#      GCS bucket kubernetes-release-dev
+#
+#    * https{0,1}://
+#      An URL that points to a remote location that follows the rules
+#      for staging K8s builds. This option enables yakity to use a custom
+#      build staged with "kubetest".
+#
+# Whether a URL is discerned from K8S_VERSION or it is set to a URL, the
+# URL is used to build the paths to the following K8s artifacts:
+#
+#        1. https://URL/kubernetes.tar.gz
+#        2. https://URL/kubernetes-client-OS-ARCH.tar.gz
+#        3. https://URL/kubernetes-node-OS-ARCH.tar.gz
+#        3. https://URL/kubernetes-server-OS-ARCH.tar.gz
+#        4. https://URL/kubernetes-test-OS-ARCH.tar.gz
 #
 # To see a full list of supported versions use the Google Storage
 # utility, gsutil, and execute "gsutil ls gs://kubernetes-release/release"
@@ -629,6 +647,31 @@ reverse_ipv4_address() {
   echo "${1}" | sed 's~\(.\{1,\}\)/[[:digit:]]\{1,\}~\1~g' | \
     tr '.' '\n' | sed '1!x;H;1h;$!d;g' | \
     tr '\n' '.' | sed 's/.$//'
+}
+
+# Executes a HEAD request against a URL and verfieis the request returns
+# the provided HTTP status and optional response message.
+http_stat() {
+  ${CURL} -sSI "${3}" | grep -q \
+    '^HTTP/[1-2]\(\.[0-9]\)\{0,1\} '"${1}"'[[:space:]]\{0,\}\('"${2}"'\)\{0,1\}[[:space:]]\{0,\}$'
+}
+http_200() { http_stat 200                "OK" "${1}"; }
+http_204() { http_stat 204        "No Content" "${1}"; }
+http_301() { http_stat 301 "Moved Permanently" "${1}"; }
+http_302() { http_stat 302             "Found" "${1}"; }
+
+# This function assumes a resource is available if it returns 200, 301, or 302.
+# The issue is GitHub downloads use S3 as the backing store. It's not possible
+# to simply issue a HEAD request against a GitHub download URL as the URL points
+# to an S3 resource using a signature for a GET operation, not a HEAD operation.
+# The S3 service rejects the HEAD request since it is sent with a signature for
+# a GET operation.
+http_ok() { http_200 "${1}" || http_301 "${1}" || http_302 "${1}"; }
+
+# Returns a successful exit code if the provided argument begins with http://
+# or https://.
+is_url() {
+  echo "${1}" | grep -iq '^https\{0,1\}://'
 }
 
 # Creates a new X509 certificate/key pair.
@@ -3614,24 +3657,85 @@ create_pod_net_routes() {
   echo "created routes for pod network"
 }
 
-download_jq() {
-  JQ_URL=https://github.com/stedolan/jq/releases/download
-  JQ_ARTIFACT="${JQ_URL}/jq-${JQ_VERSION}/jq-linux64"
-  echo "downloading ${JQ_ARTIFACT}"
-  ${CURL} -Lo "${BIN_DIR}/jq" "${JQ_ARTIFACT}" || \
-    error "failed to download ${JQ_ARTIFACT}"
+################################################################################
+##                           Download Binaries                                ##
+################################################################################
+download_cni_plugins() {
+  if is_url "${CNI_PLUGINS_VERSION}"; then
+    url="${CNI_PLUGINS_VERSION}"
+  else
+    url=https://github.com/containernetworking/plugins/releases/download
+    url="${url}/v${CNI_PLUGINS_VERSION}/cni-plugins-amd64-v${CNI_PLUGINS_VERSION}.tgz"
+  fi
+  http_ok "${url}" || { error "could not stat ${url}"; return; }
+  mkdir -p "${CNI_BIN_DIR}"
+  echo "downloading ${url}"
+  ${CURL} -L "${url}" | tar xzvC "${CNI_BIN_DIR}" || \
+    error "failed to download ${url}"
+}
+
+download_containerd() {
+  if is_url "${CONTAINERD_VERSION}"; then
+    url="${CONTAINERD_VERSION}"
+  else
+    url=https://github.com/containerd/containerd/releases/download
+    url="${url}/v${CONTAINERD_VERSION}/containerd-${CONTAINERD_VERSION}.linux-amd64.tar.gz"
+  fi
+  http_ok "${url}" || { error "could not stat ${url}"; return; }
+  echo "downloading ${url}"
+  ${CURL} -L "${url}" | tar xzvC "${BIN_DIR}" --strip-components=1
+  exit_code="${?}" && \
+    [ "${exit_code}" -gt "1" ] && \
+    { error "failed to download ${url}" "${exit_code}"; return; }
+  return 0
+}
+
+download_coredns() {
+  if is_url "${COREDNS_VERSION}"; then
+    url="${COREDNS_VERSION}"
+  else
+    prefix=https://github.com/coredns/coredns/releases/download
+    url="${prefix}/v${COREDNS_VERSION}/coredns_${COREDNS_VERSION}_linux_amd64.tgz"
+    # Check to see if the CoreDNS artifact uses the old or new filename format.
+    # The change occurred with release 1.2.2.
+    http_ok "${url}" || \
+      url="${prefix}/v${COREDNS_VERSION}/release.coredns_${COREDNS_VERSION}_linux_amd64.tgz"
+  fi
+
+  http_ok "${url}" || { error "could not stat ${url}"; return; }
+  echo "downloading ${url}"
+  ${CURL} -L "${url}" | tar xzvC "${BIN_DIR}" || \
+    error "failed to download ${url}"
+}
+
+download_crictl() {
+  if is_url "${CRICTL_VERSION}"; then
+    url="${CRICTL_VERSION}"
+  else
+    url=https://github.com/kubernetes-incubator/cri-tools/releases/download
+    url="${url}/v${CRICTL_VERSION}/crictl-v${CRICTL_VERSION}-linux-amd64.tar.gz"
+  fi
+  http_ok "${url}" || { error "could not stat ${url}"; return; }
+  echo "downloading ${url}"
+  ${CURL} -L "${url}" | tar xzvC "${BIN_DIR}" || \
+    error "failed to download ${url}"
 }
 
 download_etcd() {
-  ETCD_URL=https://github.com/etcd-io/etcd/releases/download
-  ETCD_ARTIFACT="${ETCD_URL}/v${ETCD_VERSION}/etcd-v${ETCD_VERSION}-linux-amd64.tar.gz"
-  echo "downloading ${ETCD_ARTIFACT}"
-  ${CURL} -L "${ETCD_ARTIFACT}" | \
-    tar --strip-components=1 --wildcards -xzvC \
-    "${BIN_DIR}" '*/etcd' '*/etcdctl'
+  if is_url "${ETCD_VERSION}"; then
+    url="${ETCD_VERSION}"
+  else
+    url=https://github.com/etcd-io/etcd/releases/download
+    url="${url}/v${ETCD_VERSION}/etcd-v${ETCD_VERSION}-linux-amd64.tar.gz"
+  fi
+  http_ok "${url}" || { error "could not stat ${url}"; return; }
+  echo "downloading ${url}"
+  ${CURL} -L "${url}" | tar xzvC "${BIN_DIR}" \
+    --strip-components=1 --wildcards \
+    '*/etcd' '*/etcdctl'
   exit_code="${?}" && \
     [ "${exit_code}" -gt "1" ] && \
-    { error "failed to download ${ETCD_ARTIFACT}" "${exit_code}"; return; }
+    { error "failed to download ${url}" "${exit_code}"; return; }
   
   # If the node is a worker then it doesn't need to install the etcd server.
   [ "${NODE_TYPE}" = "worker" ] && rm -fr "${BIN_DIR}/etcd"
@@ -3639,130 +3743,91 @@ download_etcd() {
   return 0
 }
 
-download_coredns() {
-  COREDNS_URL=https://github.com/coredns/coredns/releases/download
-  COREDNS_ARTIFACT="${COREDNS_URL}/v${COREDNS_VERSION}/coredns_${COREDNS_VERSION}_linux_amd64.tgz"
-
-  # Check to see if the CoreDNS artifact uses the old or new filename format.
-  # The change occurred with release 1.2.2.
-  if ${CURL} -I "${COREDNS_ARTIFACT}" | grep -q 'HTTP/1.1 404 Not Found'; then
-    COREDNS_ARTIFACT="${COREDNS_URL}/v${COREDNS_VERSION}/release.coredns_${COREDNS_VERSION}_linux_amd64.tgz"
+download_jq() {
+  if is_url "${JQ_VERSION}"; then
+    url="${JQ_VERSION}"
+  else
+    url=https://github.com/stedolan/jq/releases/download
+    url="${url}/jq-${JQ_VERSION}/jq-linux64"
   fi
-
-  echo "downloading ${COREDNS_ARTIFACT}"
-  ${CURL} -L "${COREDNS_ARTIFACT}" | tar -xzvC "${BIN_DIR}" || \
-    error "failed to download ${COREDNS_ARTIFACT}"
+  http_ok "${url}" || { error "could not stat ${url}"; return; }
+  echo "downloading ${url}"
+  ${CURL} -Lo "${BIN_DIR}/jq" "${url}" || error "failed to download ${url}"
 }
 
 download_kubernetes_node() {
-  K8S_ARTIFACT="${K8S_ARTIFACT_PREFIX}/kubernetes-node-linux-amd64.tar.gz"
-  echo "downloading ${K8S_ARTIFACT}"
-  ${CURL} -L "${K8S_ARTIFACT}" | \
-      tar --strip-components=3 --wildcards -xzvC "${BIN_DIR}" \
-      --exclude=kubernetes/node/bin/*.tar \
-      --exclude=kubernetes/node/bin/*.docker_tag \
-      'kubernetes/node/bin/*'
+  url="${K8S_ARTIFACT_PREFIX}/kubernetes-node-linux-amd64.tar.gz"
+  http_ok "${url}" || { error "could not stat ${url}"; return; }
+  echo "downloading ${url}"
+  ${CURL} -L "${url}" | tar xzvC "${BIN_DIR}" \
+    --strip-components=3 --wildcards  \
+    --exclude=kubernetes/node/bin/*.tar \
+    --exclude=kubernetes/node/bin/*.docker_tag \
+    'kubernetes/node/bin/*'
   exit_code="${?}" && \
     [ "${exit_code}" -gt "1" ] && \
-    { error "failed to download ${K8S_ARTIFACT}" "${exit_code}"; return; }
+    { error "failed to download ${url}" "${exit_code}"; return; }
   return 0
 }
 
 download_kubernetes_server() {
-  K8S_ARTIFACT="${K8S_ARTIFACT_PREFIX}/kubernetes-server-linux-amd64.tar.gz"
-  echo "downloading ${K8S_ARTIFACT}"
-  ${CURL} -L "${K8S_ARTIFACT}" | \
-    tar --strip-components=3 --wildcards -xzvC "${BIN_DIR}" \
+  url="${K8S_ARTIFACT_PREFIX}/kubernetes-server-linux-amd64.tar.gz"
+  http_ok "${url}" || { error "could not stat ${url}"; return; }
+  echo "downloading ${url}"
+  ${CURL} -L "${url}" | tar xzvC "${BIN_DIR}" \
+    --strip-components=3 --wildcards \
     --exclude=kubernetes/server/bin/*.tar \
     --exclude=kubernetes/server/bin/*.docker_tag \
     'kubernetes/server/bin/*'
   exit_code="${?}" && \
     [ "${exit_code}" -gt "1" ] && \
-    { error "failed to download ${K8S_ARTIFACT}" "${exit_code}"; return; }
+    { error "failed to download ${url}" "${exit_code}"; return; }
   return 0
 }
 
 download_kubernetes_test() {
   [ "${INSTALL_CONFORMANCE_TESTS}" = "true" ] || return 0
-  mkdir -p /var/lib/kubernetes/e2e; chmod 0755 /var/lib/kubernetes/e2e
-  K8S_ARTIFACT="${K8S_ARTIFACT_PREFIX}/kubernetes-test.tar.gz"
-  echo "downloading ${K8S_ARTIFACT}"
-  ${CURL} -L "${K8S_ARTIFACT}" | \
-    tar -xzvC /var/lib/kubernetes/e2e \
-      --exclude='kubernetes/platforms/darwin' \
-      --exclude='kubernetes/platforms/windows' \
-      --exclude='kubernetes/platforms/linux/arm' \
-      --exclude='kubernetes/platforms/linux/arm64' \
-      --exclude='kubernetes/platforms/linux/ppc64le' \
-      --exclude='kubernetes/platforms/linux/s390x' \
-      --strip-components=1
-  exit_code="${?}" && \
-    [ "${exit_code}" -gt "1" ] && \
-    { error "failed to download ${K8S_ARTIFACT}" "${exit_code}"; return; }
-
-  K8S_ARTIFACT="${K8S_ARTIFACT_PREFIX}/kubernetes.tar.gz"
-  echo "downloading ${K8S_ARTIFACT}"
-  ${CURL} -L "${K8S_ARTIFACT}" | \
-    tar -xzvC /var/lib/kubernetes/e2e --strip-components=1
-  exit_code="${?}" && \
-    [ "${exit_code}" -gt "1" ] && \
-    { error "failed to download ${K8S_ARTIFACT}" "${exit_code}"; return; }
-
-  return 0
+  url="${K8S_ARTIFACT_PREFIX}/kubernetes-test.tar.gz"
+  http_ok "${url}" || { error "could not stat ${url}"; return; }
+  echo "downloading ${url}"
+  ${CURL} -L "${url}" | tar xzvC /var/lib || error "failed to download ${url}"
 }
 
 download_nginx() {
-  NGINX_URL=http://cnx.vmware.s3.amazonaws.com/cicd/container-linux/nginx
-  NGINX_ARTIFACT="${NGINX_URL}/v${NGINX_VERSION}/nginx.tar.gz"
-  echo "downloading ${NGINX_ARTIFACT}"
-  ${CURL} -L "${NGINX_ARTIFACT}" | tar -xzvC "${BIN_DIR}" || \
-    error "failed to download ${NGINX_ARTIFACT}"
-}
-
-download_containerd() {
-  CONTAINERD_URL=https://github.com/containerd/containerd/releases/download
-  CONTAINERD_ARTIFACT="${CONTAINERD_URL}/v${CONTAINERD_VERSION}/containerd-${CONTAINERD_VERSION}.linux-amd64.tar.gz"
-  echo "downloading ${CONTAINERD_ARTIFACT}"
-  ${CURL} -L "${CONTAINERD_ARTIFACT}" | \
-    tar -xzvC "${BIN_DIR}" --strip-components=1
-  exit_code="${?}" && \
-    [ "${exit_code}" -gt "1" ] && \
-    { error "failed to download ${CONTAINERD_ARTIFACT}" "${exit_code}"; return; }
-  return 0
-}
-
-download_cni_plugins() {
-  mkdir -p "${CNI_BIN_DIR}"
-
-  CNI_PLUGINS_URL=https://github.com/containernetworking/plugins/releases/download
-  CNI_PLUGINS_ARTIFACT="${CNI_PLUGINS_URL}/v${CNI_PLUGINS_VERSION}/cni-plugins-amd64-v${CNI_PLUGINS_VERSION}.tgz"
-  echo "downloading ${CNI_PLUGINS_ARTIFACT}"
-  ${CURL} -L "${CNI_PLUGINS_ARTIFACT}" | tar -xzvC "${CNI_BIN_DIR}" || \
-    error "failed to download ${CNI_PLUGINS_ARTIFACT}"
-}
-
-download_crictl() {
-  CRICTL_URL=https://github.com/kubernetes-incubator/cri-tools/releases/download
-  CRICTL_ARTIFACT="${CRICTL_URL}/v${CRICTL_VERSION}/crictl-v${CRICTL_VERSION}-linux-amd64.tar.gz"
-  echo "downloading ${CRICTL_ARTIFACT}"
-  ${CURL} -L "${CRICTL_ARTIFACT}" | tar -xzvC "${BIN_DIR}" || \
-    error "failed to download ${CRICTL_ARTIFACT}"
+  if is_url "${NGINX_VERSION}"; then
+    url="${NGINX_VERSION}"
+  else
+    url=http://cnx.vmware.s3.amazonaws.com/cicd/container-linux/nginx
+    url="${url}/v${NGINX_VERSION}/nginx.tar.gz"
+  fi
+  http_ok "${url}" || { error "could not stat ${url}"; return; }
+  echo "downloading ${url}"
+  ${CURL} -L "${url}" | tar xzvC "${BIN_DIR}" || \
+    error "failed to download ${url}"
 }
 
 download_runc() {
-  RUNC_URL=https://github.com/opencontainers/runc/releases/download
-  RUNC_ARTIFACT="${RUNC_URL}/v${RUNC_VERSION}/runc.amd64"
-  echo "downloading ${RUNC_ARTIFACT}"
-  ${CURL} -Lo "${BIN_DIR}/runc" "${RUNC_ARTIFACT}" || \
-    error "failed to download ${RUNC_ARTIFACT}"
+  if is_url "${RUNC_VERSION}"; then
+    url="${RUNC_VERSION}"
+  else
+    url=https://github.com/opencontainers/runc/releases/download
+    url="${url}/v${RUNC_VERSION}/runc.amd64"
+  fi
+  http_ok "${url}" || { error "could not stat ${url}"; return; }
+  echo "downloading ${url}"
+  ${CURL} -Lo "${BIN_DIR}/runc" "${url}" || error "failed to download ${url}"
 }
 
 download_runsc() {
-  RUNSC_URL=https://storage.googleapis.com/gvisor/releases/nightly
-  RUNSC_ARTIFACT="${RUNSC_URL}/${RUNSC_VERSION}/runsc"
-  echo "downloading ${RUNSC_ARTIFACT}"
-  ${CURL} -Lo "${BIN_DIR}/runsc" "${RUNSC_ARTIFACT}" || \
-    error "failed to download ${RUNSC_ARTIFACT}"
+  if is_url "${RUNSC_VERSION}"; then
+    url="${RUNSC_VERSION}"
+  else
+    url=https://storage.googleapis.com/gvisor/releases/nightly
+    url="${url}/${RUNSC_VERSION}/runsc"
+  fi
+  http_ok "${url}" || { error "could not stat ${url}"; return; }
+  echo "downloading ${url}"
+  ${CURL} -Lo "${BIN_DIR}/runsc" "${url}" || error "failed to download ${url}"
 }
 
 download_binaries() {
@@ -3823,6 +3888,10 @@ init_k8s_artifact_prefix() {
   K8S_ARTIFACT_PREFIX="$(get_k8s_artifacts_url "${K8S_VERSION}")" ||
     error "failed to init k8s artifact prefix from '${K8S_VERSION}'"
 }
+
+################################################################################
+##                        main(int argc, char *argv[])                        ##
+################################################################################
 
 # Writes /etc/profile.d/prompt.sh to provide shells with a sane prompt.
 configure_prompt || fatal "failed to configure prompt"
