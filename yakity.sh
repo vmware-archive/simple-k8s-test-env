@@ -1720,6 +1720,13 @@ configure_prompt() {
   echo 'export PS1="[\$?]\[\e[32;1m\]\u\[\e[0m\]@\[\e[32;1m\]\h\[\e[0m\]:\W$ \[\e[0m\]"' >> /etc/profile.d/prompt.sh
 }
 
+# Creates a small command for printing the node type.
+create_node_type_cmd() {
+  info "creating node-type command"
+  printf '#!/bin/sh\necho "%s"\n' "${NODE_TYPE}" >/opt/bin/node-type || return
+  chmod 0755 /opt/bin/node-type
+}
+
 # Adds ${BIN_DIR} to the PATH for logged-in users.
 configure_path() {
   info "configuring path"
@@ -4029,6 +4036,9 @@ init_k8s_artifact_prefix() {
 ################################################################################
 ##                        main(int argc, char *argv[])                        ##
 ################################################################################
+
+# Creates /opt/bin/node-type to make discovery the node type very easy.
+create_node_type_cmd || fatal "failed to create node-type command"
 
 # Writes /etc/profile.d/prompt.sh to provide shells with a sane prompt.
 configure_prompt || fatal "failed to configure prompt"
