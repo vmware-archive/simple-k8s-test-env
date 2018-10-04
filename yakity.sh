@@ -32,57 +32,100 @@ parse_bool() {
   { echo "${1}" | grep -oiq 'true\|yes\|1' && echo 'true'; } || echo 'false'
 }
 
-# Normalize the possible truthy value of DEBUG to lower-case "true".
-DEBUG=$(parse_bool "${DEBUG}")
-is_debug() { [ "${DEBUG}" = "true" ]; }
-
-# Debug mode enables tracing.
-is_debug && set -x && echo "tracing enabled"
-
-# Add ${BIN_DIR} to the path
-BIN_DIR="${BIN_DIR:-/opt/bin}"; mkdir -p "${BIN_DIR}"
-echo "${PATH}" | grep -qF "${BIN_DIR}" || export PATH="${BIN_DIR}:${PATH}"
-
 # echo2 echos the provided arguments to file descriptor 2, stderr.
 echo2() {
   echo "${@}" 1>&2
 }
 
-# debug MSG
-#   Prints the supplies message to stderr, but only if debug mode is
-#   activated.
-debug() {
-  is_debug || echo2 "DEBUG: ${1}"
+# Logging levels
+FATAL_LEVEL=1; ERROR_LEVEL=2; WARN_LEVEL=3; INFO_LEVEL=4; DEBUG_LEVEL=5;
+
+# LOG_LEVEL may be set to:
+#   * 1, FATAL
+#   * 2, ERROR
+#   * 3, WARN
+#   * 4, INFO
+#   * 5, DEBUG
+LOG_LEVEL="${LOG_LEVEL:-${INFO_LEVEL}}"
+
+parse_log_level() {
+  if   echo "${1}" | grep -iq "^${FATAL_LEVEL}\\|fatal$"; then
+    echo "${FATAL_LEVEL}"
+  elif echo "${1}" | grep -iq "^${ERROR_LEVEL}\\|error$"; then
+    echo "${ERROR_LEVEL}"
+  elif echo "${1}" | grep -iq "^${WARN_LEVEL}\\|warn\\(ing\\)\\{0,1\\}$"; then
+    echo "${WARN_LEVEL}"
+  elif echo "${1}" | grep -iq "^${INFO_LEVEL}\\|info$"; then
+    echo "${INFO_LEVEL}"
+  elif echo "${1}" | grep -iq "^${DEBUG_LEVEL}\\|debug$"; then
+    echo "${DEBUG_LEVEL}"
+  else
+    echo "${INFO_LEVEL}"
+  fi
 }
 
-# warn MSG
-#   Prints the supplies message to stderr.
-warn() {
-  echo2 "WARN: ${1}"
-}
+# Parse the log level that may have been set when this script was executed.
+LOG_LEVEL="$(parse_log_level "${LOG_LEVEL}")"
+
+# Normalize the possible truthy value of DEBUG to lower-case "true".
+DEBUG=$(parse_bool "${DEBUG}")
+is_debug() { [ "${DEBUG}" = "true" ]; }
+
+# Debug mode enables tracing and sets LOG_LEVEL=DEBUG_LEVEL.
+is_debug && { set -x; LOG_LEVEL="${DEBUG_LEVEL}"; }
 
 # Returns a success if the provided argument is a whole number.
 is_whole_num() { echo "${1}" | grep -q '^[[:digit:]]\{1,\}$'; }
 
-# error MSG [EXIT_CODE]
-#  Prints the supplied message to stderr and returns the shell's
-#  last known exit code, $?. If a second argument is provided the
-#  function returns its value as the return code.
-error() {
-  exit_code="${?}"; is_whole_num "${2}" && exit_code="${2}"
-  [ "${exit_code}" -eq "0" ] && return 0
-  echo2 "ERROR [${exit_code}] - ${1}"; return "${exit_code}"
+# log LEVEL_INT LEVEL_SZ MSG [RETURN_CODE]
+log() {
+  exit_code="${?}"
+  lvl_int="${1}"; lvl_sz="${2}"; msg="${3}"; ret_code="${4}"
+  is_whole_num "${ret_code}" || ret_code="${exit_code}"
+  if [ "${LOG_LEVEL}" -ge "${lvl_int}" ]; then
+    printf "%s [%s] " "${lvl_sz}" "$(date +%s)" 1>&2; echo2 "${msg}"
+  fi
+  return "${ret_code}"
 }
 
-# fatal MSG [EXIT_CODE]
-#  Prints the supplied message to stderr and exits with the shell's
-#  last known exit code, $?. If a second argument is provided the 
-#  program exits with that value as the exit code.
+# debug MSG [RETURN_CODE]
+#   Prints the supplies message to stderr if LOG_LEVEL >=DEBUG_LEVEL.
+debug() { log "${DEBUG_LEVEL}" DEBUG "${@}"; }
+
+# info MSG [RETURN_CODE]
+#   Prints the supplies message to stderr if LOG_LEVEL >=INFO_LEVEL.
+info() { log "${INFO_LEVEL}" INFO "${@}"; }
+
+# warn MSG [RETURN_CODE]
+#   Prints the supplies message to stderr if LOG_LEVEL >=WARN_LEVEL.
+warn() { log "${WARN_LEVEL}" WARN "${@}"; }
+
+# error MSG [RETURN_CODE]
+#   Prints the supplies message to stderr if LOG_LEVEL >=ERROR_LEVEL.
+error() { log "${ERROR_LEVEL}" ERROR "${@}"; }
+
+# fatal MSG [RETURN_CODE]
+#   Prints the supplies message to stderr if LOG_LEVEL >=FATAL_LEVEL.
 fatal() {
-  exit_code="${?}"; [ -n "${2}" ] && exit_code="${2}"
-  [ "${exit_code}" -eq "0" ] && return 0
-  echo2 "FATAL [${exit_code}] - ${1}" 1>&2; exit "${exit_code}"
+  log "${FATAL_LEVEL}" FATAL "${@}"; ret_code="${?}"
+  [ "${ret_code}" -eq "0" ] || exit "${ret_code}"
 }
+
+# If the yakity defaults file is present then load it.
+YAK_DEFAULTS=${YAK_DEFAULTS:-/etc/default/yakity}
+if [ -e "${YAK_DEFAULTS}" ]; then
+  info "loading defaults = ${YAK_DEFAULTS}"
+  # shellcheck disable=SC1090
+  . "${YAK_DEFAULTS}" || fatal "failed to load defaults = ${YAK_DEFAULTS}"
+fi
+
+# Add ${BIN_DIR} to the path
+BIN_DIR="${BIN_DIR:-/opt/bin}"; mkdir -p "${BIN_DIR}"
+echo "${PATH}" | grep -qF "${BIN_DIR}" || export PATH="${BIN_DIR}:${PATH}"
+
+# Parse the log level a second time in case the defaults file set the
+# log level to a new value.
+LOG_LEVEL="$(parse_log_level "${LOG_LEVEL}")"
 
 # Warn the user if certain, expected directories do not exist.
 warn_and_mkdir_sysdir() {
@@ -96,14 +139,6 @@ warn_and_mkdir_sysdir /etc/systemd/system
 warn_and_mkdir_sysdir /etc/sysconfig
 warn_and_mkdir_sysdir /etc/modules-load.d
 warn_and_mkdir_sysdir /etc/sysctl.d
-
-# If the yakity defaults file is present then load it.
-KUP_DEFAULTS=${KUP_DEFAULTS:-/etc/default/yakity}
-if [ -e "${KUP_DEFAULTS}" ]; then
-  echo "loading defaults = ${KUP_DEFAULTS}"
-  # shellcheck disable=SC1090
-  . "${KUP_DEFAULTS}" || fatal "failed to load defaults = ${KUP_DEFAULTS}"
-fi
 
 # NODE_TYPE is first assgined to the value of the first argument, $1. 
 # If unset, NODE_TYPE is assigned the value of the environment variable
@@ -127,21 +162,21 @@ NUM_CONTROLLERS="${NUM_CONTROLLERS:-1}"
 # variable NUM_CONTROLLERS.
 NUM_NODES="${4:-${NUM_NODES}}"; NUM_NODES="${NUM_NODES:-${NUM_CONTROLLERS}}"
 
-echo "pre-processed input"
-echo "  NODE_TYPE       = ${NODE_TYPE}"
-echo "  ETCD_DISCOVERY  = ${ETCD_DISCOVERY}"
-echo "  NUM_CONTROLLERS = ${NUM_CONTROLLERS}"
-echo "  NUM_NODES       = ${NUM_NODES}"
+debug "pre-processed input"
+debug "  NODE_TYPE       = ${NODE_TYPE}"
+debug "  ETCD_DISCOVERY  = ${ETCD_DISCOVERY}"
+debug "  NUM_CONTROLLERS = ${NUM_CONTROLLERS}"
+debug "  NUM_NODES       = ${NUM_NODES}"
 
 # A quick var and function that indicates whether this is a single
 # node cluster.
 is_single() { [ -z "${ETCD_DISCOVERY}" ]; }
 
 if is_single; then
-  echo "deploying single node cluster"
+  info "deploying single node cluster"
   NODE_TYPE=both; NUM_CONTROLLERS=1; NUM_NODES=1
 else
-  echo "deploying multi-node cluster"
+  info "deploying multi-node cluster"
 
   [ -z "${NODE_TYPE}" ] && fatal "missing NODE_TYPE"
   [ -z "${NUM_CONTROLLERS}" ] && fatal "missing NUM_CONTROLLERS"
@@ -163,11 +198,11 @@ else
     fatal "invalid NUM_NODES=${NUM_NODES}"
 fi
 
-echo "post-processed input"
-echo "  NODE_TYPE       = ${NODE_TYPE}"
-echo "  ETCD_DISCOVERY  = ${ETCD_DISCOVERY}"
-echo "  NUM_CONTROLLERS = ${NUM_CONTROLLERS}"
-echo "  NUM_NODES       = ${NUM_NODES}"
+info "deployment config"
+info "  NODE_TYPE       = ${NODE_TYPE}"
+info "  ETCD_DISCOVERY  = ${ETCD_DISCOVERY}"
+info "  NUM_CONTROLLERS = ${NUM_CONTROLLERS}"
+info "  NUM_NODES       = ${NUM_NODES}"
 
 ################################################################################
 ##                                Config                                      ##
@@ -455,7 +490,7 @@ if echo "${K8S_VERSION}" | grep -q '^ci/' || \
 else
   KUBE_SCHEDULER_API_VERSION="${KUBE_SCHEDULER_API_VERSION:-${KUBE_SCHEDULER_API_VERSION_OLD_PREFIX}}"
 fi
-echo "KUBE_SCHEDULER_API_VERSION=${KUBE_SCHEDULER_API_VERSION}"
+debug "KUBE_SCHEDULER_API_VERSION=${KUBE_SCHEDULER_API_VERSION}"
 
 ################################################################################
 ##                                Functions                                   ##
@@ -475,19 +510,19 @@ LOCK_PID=
 # not work until the etcd server is online and etcdctl has been configured.
 release_lock() {
   kill "${LOCK_PID}"; wait "${LOCK_PID}" || true; rm -f "${LOCK_FILE}"
-  echo "released lock ${LOCK_KEY}"
+  debug "released lock ${LOCK_KEY}"
 }
 
 # Obtains a distributed lock from the etcd server. This function will
 # not work until the etcd server is online and etcdctl has been configured.
 obtain_lock() {
-  echo "create lock file=${LOCK_FILE}"
+  debug "create lock file=${LOCK_FILE}"
   mkfifo "${LOCK_FILE}" || { error "failed to create fifo lock file"; return; }
 
-  echo "obtaining distributed lock=${LOCK_KEY}"
+  debug "obtaining distributed lock=${LOCK_KEY}"
   etcdctl lock "${LOCK_KEY}" >"${LOCK_FILE}" &
   LOCK_PID="${!}"
-  echo "distributed lock process pid=${LOCK_PID}"
+  debug "distributed lock process pid=${LOCK_PID}"
 
   if ! read -r lock_name <"${LOCK_FILE}"; then
     exit_code="${?}"
@@ -496,7 +531,7 @@ obtain_lock() {
     return "${exit_code}"
   fi
 
-  echo "obtained distributed lock: ${lock_name}"
+  debug "obtained distributed lock: ${lock_name}"
 }
 
 # Evaluates the first argument as the name of a function to execute 
@@ -504,11 +539,11 @@ obtain_lock() {
 # exit code, the lock is always released. This function then exits with
 # the exit code of the evaluated function.
 do_with_lock() {
-  echo "obtaining distributed lock to safely execute ${1}"
+  debug "obtaining distributed lock to safely execute ${1}"
   obtain_lock || { error "failed to obtain lock for ${1}"; return; }
   eval "${1}"; exit_code="${?}"
   release_lock
-  echo "released lock used to safeley execute ${1}"
+  debug "released lock used to safeley execute ${1}"
   return "${exit_code}"
 }
 
@@ -538,12 +573,7 @@ grant_etcd_lease() {
     # Create a shortcut way to invoke 'etcdctl put' with the lease attached.
     PUT_WITH_LEASE="etcdctl put --lease=${ETCD_LEASE_ID}"
 
-    printf 'lease already exists: id=%s ttl=%s grantor=%s\n' \
-           "${ETCD_LEASE_ID}" \
-           "${lease_ttl}" \
-           "${lease_grantor}"
-
-    return
+    info "lease already exists: id=${ETCD_LEASE_ID} ttl=${lease_ttl} grantor=${lease_grantor}"
   fi
 
   # Grant a new lease.
@@ -561,24 +591,24 @@ grant_etcd_lease() {
   ${PUT_WITH_LEASE} "${lease_grantor_key}" "${HOST_FQDN}" || \
     { error "error storing etcd lease grantor"; return; }
 
-  echo "lease id=${ETCD_LEASE_ID} granted"
+  info "lease id=${ETCD_LEASE_ID} granted"
 }
 
 put_string() {
-  echo "putting '${2}' into etcd key '${1}'"
+  debug "putting '${2}' into etcd key '${1}'"
   ${PUT_WITH_LEASE} "${1}" "${2}" || \
     { error "failed to put '${2}' into etcd key '${1}'"; return; }
 }
 
 put_file() {
-  echo "putting contents of '${2}' into etcd key '${1}'"
+  debug "putting contents of '${2}' into etcd key '${1}'"
   ${PUT_WITH_LEASE} "${1}" -- <"${2}" || \
     { error "failed to put contents of '${2}' to etcd key '${1}'"; return; }
 }
 
 put_stdin() {
   old_ifs="${IFS}"; IFS=''; stdin="$(cat)"; IFS="${old_ifs}"
-  echo "putting contents of STDIN into etcd key '${1}'"
+  debug "putting contents of STDIN into etcd key '${1}'"
   echo "${stdin}" | ${PUT_WITH_LEASE} "${1}" || \
     { error "failed to put contents of STDIN to etcd key '${1}'"; return; }
 }
@@ -591,13 +621,13 @@ retry_until_0() {
   i=1 && while true; do
     [ "${i}" -gt 100 ] && { error "timed out: ${msg}" 1; return; }
     if is_debug; then
-      echo "${1}: attempt ${i}" && "${@}" && break
+      debug "${1}: attempt ${i}" && "${@}" && break
     else
       printf "." && "${@}" >/dev/null 2>&1 && break
     fi
     sleep 3; i=$((i+1))
   done
-  { is_debug && echo "${msg}: success"; } || echo "✓"
+  { is_debug && debug "${msg}: success"; } || echo "✓"
 }
 
 # Parses K8S_VERSION and returns the URL used to access the Kubernetes
@@ -730,32 +760,32 @@ EOF
     done
   fi
 
-  echo "generating x509 cert/key pair"
-  echo "  TLS_CA_CRT                 = ${TLS_CA_CRT}"
-  echo "  TLS_CA_KEY                 = ${TLS_CA_KEY}"
-  echo "  TLS_KEY_OUT                = ${TLS_KEY_OUT}"
-  echo "  TLS_KEY_UID                = ${TLS_KEY_UID}"
-  echo "  TLS_KEY_GID                = ${TLS_KEY_GID}"
-  echo "  TLS_KEY_PERM               = ${TLS_KEY_PERM}"
-  echo "  TLS_CRT_OUT                = ${TLS_CRT_OUT}"
-  echo "  TLS_CRT_UID                = ${TLS_CRT_UID}"
-  echo "  TLS_CRT_GID                = ${TLS_CRT_GID}"
-  echo "  TLS_CRT_PERM               = ${TLS_CRT_PERM}"
-  echo "  TLS_DEFAULT_BITS           = ${TLS_DEFAULT_BITS}"
-  echo "  TLS_DEFAULT_DAYS           = ${TLS_DEFAULT_DAYS}"
-  echo "  TLS_COUNTRY_NAME           = ${TLS_COUNTRY_NAME}"
-  echo "  TLS_STATE_OR_PROVINCE_NAME = ${TLS_STATE_OR_PROVINCE_NAME}"
-  echo "  TLS_LOCALITY_NAME          = ${TLS_LOCALITY_NAME}"
-  echo "  TLS_ORG_NAME               = ${TLS_ORG_NAME}"
-  echo "  TLS_OU_NAME                = ${TLS_OU_NAME}"
-  echo "  TLS_COMMON_NAME            = ${TLS_COMMON_NAME}"
-  echo "  TLS_EMAIL                  = ${TLS_EMAIL}"
-  echo "  TLS_IS_CA                  = ${TLS_IS_CA}"
-  echo "  TLS_KEY_USAGE              = ${TLS_KEY_USAGE}"
-  echo "  TLS_EXT_KEY_USAGE          = ${TLS_EXT_KEY_USAGE}"
-  echo "  TLS_SAN                    = ${TLS_SAN}"
-  echo "  TLS_SAN_DNS                = ${TLS_SAN_DNS}"
-  echo "  TLS_SAN_IP                 = ${TLS_SAN_IP}"
+  info "generating x509 certificate for ${TLS_COMMON_NAME}"
+  debug "  TLS_CA_CRT                 = ${TLS_CA_CRT}"
+  debug "  TLS_CA_KEY                 = ${TLS_CA_KEY}"
+  debug "  TLS_KEY_OUT                = ${TLS_KEY_OUT}"
+  debug "  TLS_KEY_UID                = ${TLS_KEY_UID}"
+  debug "  TLS_KEY_GID                = ${TLS_KEY_GID}"
+  debug "  TLS_KEY_PERM               = ${TLS_KEY_PERM}"
+  debug "  TLS_CRT_OUT                = ${TLS_CRT_OUT}"
+  debug "  TLS_CRT_UID                = ${TLS_CRT_UID}"
+  debug "  TLS_CRT_GID                = ${TLS_CRT_GID}"
+  debug "  TLS_CRT_PERM               = ${TLS_CRT_PERM}"
+  debug "  TLS_DEFAULT_BITS           = ${TLS_DEFAULT_BITS}"
+  debug "  TLS_DEFAULT_DAYS           = ${TLS_DEFAULT_DAYS}"
+  debug "  TLS_COUNTRY_NAME           = ${TLS_COUNTRY_NAME}"
+  debug "  TLS_STATE_OR_PROVINCE_NAME = ${TLS_STATE_OR_PROVINCE_NAME}"
+  debug "  TLS_LOCALITY_NAME          = ${TLS_LOCALITY_NAME}"
+  debug "  TLS_ORG_NAME               = ${TLS_ORG_NAME}"
+  debug "  TLS_OU_NAME                = ${TLS_OU_NAME}"
+  debug "  TLS_COMMON_NAME            = ${TLS_COMMON_NAME}"
+  debug "  TLS_EMAIL                  = ${TLS_EMAIL}"
+  debug "  TLS_IS_CA                  = ${TLS_IS_CA}"
+  debug "  TLS_KEY_USAGE              = ${TLS_KEY_USAGE}"
+  debug "  TLS_EXT_KEY_USAGE          = ${TLS_EXT_KEY_USAGE}"
+  debug "  TLS_SAN                    = ${TLS_SAN}"
+  debug "  TLS_SAN_DNS                = ${TLS_SAN_DNS}"
+  debug "  TLS_SAN_IP                 = ${TLS_SAN_IP}"
 
   # Generate a private key file.
   openssl genrsa -out "${TLS_KEY_OUT}" "${TLS_DEFAULT_BITS}" || \
@@ -788,8 +818,18 @@ EOF
   [ -n "${TLS_CRT_PERM}" ] && chmod "${TLS_CRT_PERM}" "${TLS_CRT_OUT}"
 
   # Print the certificate's information if requested.
-  openssl x509 -noout -text <"${TLS_CRT_OUT}" || \
-    { error "failed to print certificate"; return; }
+  if is_debug; then 
+    openssl x509 -noout -text <"${TLS_CRT_OUT}" || \
+      { error "failed to print certificate"; return; }
+  fi
+
+  # Print the certificate's subject.
+  if cert_subj=$(openssl x509 -noout -subject <"${TLS_CRT_OUT}" | \
+                 awk '{print $2}'); then
+    info "generated x509 certificate: ${cert_subj}"
+  else
+    error "failed to print certificate subject"; return;
+  fi
 
   cd "${OLDDIR}" || { error "failed to cd to ${OLDDIR}"; return; }
 }
@@ -809,18 +849,18 @@ new_kubeconfig() {
   kfg_gid="${KFG_GID:-root}"
   kfg_perm="${KFG_PERM:-0400}"
 
-  echo "generating kubeconfig"
-  echo "  KFG_FILE_PATH  = ${KFG_FILE_PATH}"
-  echo "  KFG_TLS_CA_CRT = ${kfg_tls_ca_crt}"
-  echo "  KFG_TLS_CRT    = ${KFG_TLS_CRT}"
-  echo "  KFG_TLS_KEY    = ${KFG_TLS_KEY}"
-  echo "  KFG_CLUSTER    = ${kfg_cluster}"
-  echo "  KFG_SERVER     = ${kfg_server}"
-  echo "  KFG_CONTEXT    = ${kfg_context}"
-  echo "  KFG_USER       = ${KFG_USER}"
-  echo "  KFG_UID        = ${kfg_uid}"
-  echo "  KFG_GID        = ${kfg_gid}"
-  echo "  KFG_PERM       = ${kfg_perm}"
+  info "generating kubeconfig for ${KFG_USER}"
+  debug "  KFG_FILE_PATH  = ${KFG_FILE_PATH}"
+  debug "  KFG_TLS_CA_CRT = ${kfg_tls_ca_crt}"
+  debug "  KFG_TLS_CRT    = ${KFG_TLS_CRT}"
+  debug "  KFG_TLS_KEY    = ${KFG_TLS_KEY}"
+  debug "  KFG_CLUSTER    = ${kfg_cluster}"
+  debug "  KFG_SERVER     = ${kfg_server}"
+  debug "  KFG_CONTEXT    = ${kfg_context}"
+  debug "  KFG_USER       = ${KFG_USER}"
+  debug "  KFG_UID        = ${kfg_uid}"
+  debug "  KFG_GID        = ${kfg_gid}"
+  debug "  KFG_PERM       = ${kfg_perm}"
 
   kubectl config set-cluster "${kfg_cluster}" \
     --certificate-authority="${kfg_tls_ca_crt}" \
@@ -853,7 +893,7 @@ new_kubeconfig() {
 
 # Configures iptables.
 configure_iptables() {
-  echo "installing iptables"
+  info "installing iptables"
 
   # Tell iptables to allow all incoming and outgoing connections.
   if [ "${IPTABLES_ALLOW_ALL}" = "true" ]; then
@@ -871,7 +911,7 @@ EOF
 
   # Configure iptables for controller nodes.
   elif [ "${NODE_TYPE}" = "controller" ]; then
-    echo "iptables enabled for controller node"
+    info "iptables enabled for controller node"
     cat <<EOF >/etc/sysconfig/iptables
 *filter
 :INPUT DROP [0:0]
@@ -920,7 +960,7 @@ EOF
 
   # Configure iptables for worker nodes.
   elif [ "${NODE_TYPE}" = "worker" ]; then
-    echo "iptables enabled for worker node"
+    info "iptables enabled for worker node"
     cat <<EOF >/etc/sysconfig/iptables
 *filter
 :INPUT DROP [0:0]
@@ -978,7 +1018,7 @@ EOF
   # Configure iptables for hosts that are simultaneously controller and
   # worker nodes in a multi-node cluster.
   elif ! is_single; then
-    echo "iptables enabled for controller/worker node"
+    info "iptables enabled for controller/worker node"
     cat <<EOF >/etc/sysconfig/iptables
 *filter
 :INPUT DROP [0:0]
@@ -1047,7 +1087,7 @@ EOF
 
   # Configure iptables for a single-node cluster.
   else
-    echo "iptables enabled for single node cluster"
+    info "iptables enabled for single node cluster"
     cat <<EOF >/etc/sysconfig/iptables
 *filter
 :INPUT DROP [0:0]
@@ -1089,15 +1129,17 @@ EOF
 
   cp -f /etc/sysconfig/iptables /etc/sysconfig/ip6tables
   if systemctl is-enabled iptables.service >/dev/null 2>&1; then
-    echo "restarting iptables.service"
+    debug "restarting iptables.service"
     systemctl -l restart iptables.service || \
       { error "failed to restart iptables.service"; return; }
   fi
   if systemctl is-enabled ip6tables.service >/dev/null 2>&1; then
-    echo "restarting ip6tables.service"
+    debug "restarting ip6tables.service"
     systemctl -l restart ip6tables.service || \
       { error "failed to restart ip6tables.service"; return; }
   fi
+
+  debug "installed iptables"
 }
 
 # Enables the bridge module. This function is used by worker nodes.
@@ -1105,7 +1147,7 @@ enable_bridge_module() {
   # Do not enable the bridge module on controller nodes.
   [ "${NODE_TYPE}" = "controller" ] && return
 
-  echo "installing bridge kernel module"
+  info "installing bridge kernel module"
   echo br_netfilter > /etc/modules-load.d/br_netfilter.conf
   if systemctl is-enabled systemd-modules-load.service >/dev/null 2>&1; then
     systemctl -l restart systemd-modules-load.service || \
@@ -1116,11 +1158,13 @@ net.bridge.bridge-nf-call-iptables = 1
 net.bridge.bridge-nf-call-ip6tables = 1
 EOF
   sysctl --system || { error "failed to sysctl --system"; return; }
+
+  debug "installed bridge kernel module"
 }
 
 # Enables IP forwarding.
 enable_ip_forwarding() {
-  echo "enabling ip forwarding"
+  info "enabling ip forwarding"
   echo "net.ipv4.ip_forward = 1" >/etc/sysctl.d/k8s-ip-forward.conf
   sysctl --system || { error "failed to sysctl --system"; return; }
 }
@@ -1128,45 +1172,50 @@ enable_ip_forwarding() {
 # Reads the CA cert/key pair from TLS_CA_CRT_GZ and TLS_CA_KEY_GZ and
 # writes them to TLS_CA_CRT and TLS_CA_KEY.
 install_ca_files() {
+  info "installing CAs"
   if [ -e "${TLS_CA_CRT}" ]; then
-    echo "using existing CA crt at ${TLS_CA_CRT}"
+    debug "using existing CA crt at ${TLS_CA_CRT}"
   else
     [ -z "${TLS_CA_CRT_GZ}" ] && { error "missing TLS_CA_CRT_GZ"; return; }
-    echo "writing CA crt file ${TLS_CA_CRT}"
+    debug "writing CA crt file ${TLS_CA_CRT}"
     echo "${TLS_CA_CRT_GZ}" | base64 -d | gzip -d > "${TLS_CA_CRT}" || \
       { error "failed to write CA crt"; return; }
   fi
   if [ -e "${TLS_CA_KEY}" ]; then
-    echo "using existing CA key at ${TLS_CA_KEY}"
+    debug "using existing CA key at ${TLS_CA_KEY}"
   else
     [ -z "${TLS_CA_KEY_GZ}" ] && { error "missing TLS_CA_KEY_GZ"; return; }
-    echo "writing CA key file ${TLS_CA_KEY}"
+    debug "writing CA key file ${TLS_CA_KEY}"
     echo "${TLS_CA_KEY_GZ}" | base64 -d | gzip -d > "${TLS_CA_KEY}" || \
       { error "failed to write CA key"; return; }
   fi
 
   mkdir -p /etc/ssl/certs
   ln -s "${TLS_CA_CRT}" /etc/ssl/certs/yakity-ca.crt
-  echo "linked ${TLS_CA_CRT} to /etc/ssl/certs/yakity-ca.crt"
+  debug "linked ${TLS_CA_CRT} to /etc/ssl/certs/yakity-ca.crt"
+
+  debug "installed CAs"
 }
 
 install_etcd() {
   # Do not install etcd on worker nodes.
   [ "${NODE_TYPE}" = "worker" ] && return
 
+  info "installing etcd"
+
   # Create the etcd user if it doesn't exist.
   if ! getent passwd etcd >/dev/null 2>&1; then 
-    echo "creating etcd user"
+    debug "creating etcd user"
     useradd etcd --home /var/lib/etcd --no-user-group --system -M || \
       { error "failed to create etcd user"; return; }
   fi
 
   # Create the etcd directories and set their owner to etcd.
-  echo "creating directories for etcd server"
+  debug "creating directories for etcd server"
   mkdir -p /var/lib/etcd/data
   chown etcd /var/lib/etcd /var/lib/etcd/data || return
 
-  echo "generating cert for etcd client and peer endpoints"
+  debug "generating cert for etcd client and peer endpoints"
   (TLS_KEY_OUT=/etc/ssl/etcd.key \
     TLS_CRT_OUT=/etc/ssl/etcd.crt \
     TLS_KEY_UID=etcd \
@@ -1176,7 +1225,7 @@ install_etcd() {
     TLS_COMMON_NAME="${HOST_FQDN}" new_cert) || \
     { error "failed to generate certs for etcd"; return; }
 
-  echo "writing etcd defaults file=/etc/default/etcd"
+  debug "writing etcd defaults file=/etc/default/etcd"
   # Create the etcd environment file.
 cat <<EOF > /etc/default/etcd
 ETCD_DEBUG=${DEBUG}
@@ -1199,12 +1248,12 @@ EOF
 
   # If ETCD_DISCOVERY is set then add it to the etcd environment file.
   if [ -n "${ETCD_DISCOVERY}" ]; then
-    echo "using etcd discovery url: ${ETCD_DISCOVERY}"
+    debug "using etcd discovery url: ${ETCD_DISCOVERY}"
     echo "ETCD_DISCOVERY=${ETCD_DISCOVERY}" >> /etc/default/etcd
   fi
 
   # Create the etcd systemd service.
-  echo "writing etcd service file=/etc/systemd/system/etcd.service"
+  debug "writing etcd service file=/etc/systemd/system/etcd.service"
   cat <<EOF > /etc/systemd/system/etcd.service
 [Unit]
 Description=etcd.service
@@ -1229,35 +1278,39 @@ EnvironmentFile=/etc/default/etcd
 ExecStart=/opt/bin/etcd
 EOF
 
-  echo "enabling etcd service"
+  debug "enabling etcd service"
   systemctl -l enable etcd.service || \
     { error "failed to enable etcd.service"; return; }
 
-  echo "starting etcd service"
+  debug "starting etcd service"
   systemctl -l start etcd.service || \
     { error "failed to start etcd.service"; return; }
+
+  debug "installed etcd"
 }
 
 get_etcd_members_from_discovery_url() {
+  info "getting etcd members from discovery url"
   [ -z "${ETCD_DISCOVERY}" ] && return
   members=$(${CURL} -sSL "${ETCD_DISCOVERY}" | \
     grep -o '[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}' | \
     tr '\n' ' ' | \
     sed 's/\(.\{1,\}\).$/\1/') || return
   num_members=$(echo "${members}" | wc -w | awk '{print $1}') || return
-  echo "discovered ${num_members}"
+  debug "discovered ${num_members}"
   [ "${num_members}" -eq "${NUM_CONTROLLERS}" ] || return
-  echo "discovery complete"
+  debug "got etcd members from discovery url"
 }
 
 # Polls the etcd discovery URL until the number of expected members
 # have joined the cluster
 discover_etcd_cluster_members() {
+  info "discovering etcd cluster members"
 
   # If this is a single-node cluster then there is no need for discovery.
   if is_single; then
     CONTROLLER_IPV4_ADDRESSES="${IPV4_ADDRESS}"
-    echo "discovered etcd cluster members: ${CONTROLLER_IPV4_ADDRESSES}"
+    info "discovered etcd cluster members: ${CONTROLLER_IPV4_ADDRESSES}"
     return
   fi
 
@@ -1266,12 +1319,14 @@ discover_etcd_cluster_members() {
   #
   # After 100 failed attempts over 5 minutes the function will exit with 
   # an error.
+  info "waiting for etcd members to join cluster"
   i=1 && while true; do
     if [ "${i}" -gt 100 ]; then
       error "timed out waiting for etcd members to join cluster" 1; return
     fi
 
-    echo "waiting for etcd members to join cluster: poll attempt ${i}"
+    debug "waiting for etcd members to join cluster: poll attempt ${i}"
+    printf "."
     members=$(${CURL} -sSL "${ETCD_DISCOVERY}" | \
       grep -o '[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}' | \
       tr '\n' ' ' | \
@@ -1280,9 +1335,9 @@ discover_etcd_cluster_members() {
     # Break out of the loop if the number of members that have joined
     # the etcd cluster matches the expected number of controller nodes.
     if num_members=$(echo "${members}" | wc -w | awk '{print $1}'); then
-      echo "discovered ${num_members}"
+      debug "discovered ${num_members}"
       if [ "${num_members}" -eq "${NUM_CONTROLLERS}" ]; then
-        echo "discovery complete" && break
+        debug "discovery complete" && break
       fi
     fi
 
@@ -1299,11 +1354,11 @@ discover_etcd_cluster_members() {
   # is consistent across all of the nodes.
   CONTROLLER_IPV4_ADDRESSES=$(echo "${members}" | \
     tr ' ' '\n' | sort | tr '\n' ' ' | sed 's/\(.\{1,\}\).$/\1/')
-  echo "discovered etcd cluster members: ${CONTROLLER_IPV4_ADDRESSES}"
+  info "discovered etcd cluster members: ${CONTROLLER_IPV4_ADDRESSES}"
 }
 
 configure_etcdctl() {
-  echo "generating cert for etcdctl"
+  info "generating cert for etcdctl"
   (TLS_KEY_OUT=/etc/ssl/etcdctl.key \
     TLS_CRT_OUT=/etc/ssl/etcdctl.crt \
     TLS_KEY_GID=k8s-admin \
@@ -1322,7 +1377,7 @@ configure_etcdctl() {
     fi
   done
 
-  echo "writing etcdctl defaults file=/etc/default/etcdctl"
+  debug "writing etcdctl defaults file=/etc/default/etcdctl"
   cat <<EOF > /etc/default/etcdctl
 ETCDCTL_API=3
 ETCDCTL_CERT=/etc/ssl/etcdctl.crt
@@ -1341,25 +1396,29 @@ EOF
   set -o allexport && . /etc/default/etcdctl && set +o allexport
 
   # Make it so others can use the etcdctl config as well.
-  echo "writing etcdctl profile.d file=/etc/profile.d/etcdctl.sh"
+  debug "writing etcdctl profile.d file=/etc/profile.d/etcdctl.sh"
   cat <<EOF > /etc/profile.d/etcdctl.sh
 #!/bin/sh
 set -o allexport && . /etc/default/etcdctl && set +o allexport
 EOF
+
+  debug "configured etcdctl"
 }
 
 # Creates DNS entries on the etcd server for this node and an A-record
 # for the public cluster FQDN.
 create_dns_entries() {
+  info "creating DNS entries"
+
   # Create the round-robin A record for the cluster's public FQDN.
   # This will be executed on each node, and that's okay since it's 
   # no issue to overwrite an existing etcd key.
-  echo "creating round-robin DNS A-record for public cluster FQDN"
+  debug "creating round-robin DNS A-record for public cluster FQDN"
   cluster_fqdn_rev=$(reverse_fqdn "${CLUSTER_FQDN}")
   i=0 && for a in ${CONTROLLER_IPV4_ADDRESSES}; do
     # Create the A-Record
     etcdctl put "/skydns/${cluster_fqdn_rev}/${i}" '{"host":"'"${a}"'"}'
-    echo "created cluster FQDN DNS A-record"
+    debug "created cluster FQDN DNS A-record"
     etcdctl get "/skydns/${cluster_fqdn_rev}/${i}"
     # Increment the address index.
     i=$((i+1))
@@ -1369,13 +1428,13 @@ create_dns_entries() {
   addr_slashes=$(echo "${IPV4_ADDRESS}" | tr '.' '/')
 
   # Create the A-Record for this host.
-  echo "creating DNS A-record for this host"
+  debug "creating DNS A-record for this host"
   etcdctl put "/skydns/${fqdn_rev}" '{"host":"'"${IPV4_ADDRESS}"'"}' || \
     { error "failed to create DNS A-record"; return; }
   etcdctl get "/skydns/${fqdn_rev}"
 
   # Create the reverse lookup record for this host.
-  echo "creating DNS reverse lookup record for this host"
+  debug "creating DNS reverse lookup record for this host"
   etcdctl put "/skydns/arpa/in-addr/${addr_slashes}" '{"host":"'"${HOST_FQDN}"'"}' || \
     { error "failed to create DNS reverse lookup record"; return; }
   etcdctl get "/skydns/arpa/in-addr/${addr_slashes}"
@@ -1383,31 +1442,35 @@ create_dns_entries() {
   # If EXTERNAL_FQDN is defined then create a CNAME record for it
   # that points to CLUSTER_FQDN.
   if [ -n "${EXTERNAL_FQDN}" ]; then
-    echo "creating DNS CNAME record for external cluster FQDN"
+    debug "creating DNS CNAME record for external cluster FQDN"
     external_fqdn_rev=$(reverse_fqdn "${EXTERNAL_FQDN}")
     etcdctl put "/skydns/${external_fqdn_rev}" '{"host":"'"${CLUSTER_FQDN}"'"}'
-    echo "created external FQDN DNS CNAME record"
+    debug "created external FQDN DNS CNAME record"
     etcdctl get "/skydns/${external_fqdn_rev}"
   fi
+
+  debug "created DNS entries"
 }
 
 install_nginx() {
+  info "installing nginx"
+
   # Do not install nginx on worker nodes.
   [ "${NODE_TYPE}" = "worker" ] && return
 
   # Create the nginx user if it doesn't exist.
   if ! getent passwd nginx >/dev/null 2>&1; then 
-    echo "creating nginx user"
+    debug "creating nginx user"
     useradd nginx --home /var/lib/nginx --no-user-group --system -M || \
       { error "failed to create nginx user"; return; }
   fi
 
-  echo "creating directories for nginx"
+  debug "creating directories for nginx"
   mkdir -p  /etc/nginx \
             /var/lib/nginx \
             /var/log/nginx
 
-  echo "writing nginx config file=/etc/nginx/nginx.conf"
+  debug "writing nginx config file=/etc/nginx/nginx.conf"
   cat <<EOF > /etc/nginx/nginx.conf
 user                   nginx nobody;
 pid                    /var/run/nginx.pid;
@@ -1452,7 +1515,7 @@ http {
 }
 EOF
 
-  echo "writing nginx service=/etc/systemd/system/nginx.service"
+  debug "writing nginx service=/etc/systemd/system/nginx.service"
   cat <<EOF > /etc/systemd/system/nginx.service
 [Unit]
 Description=nginx.service
@@ -1473,32 +1536,36 @@ ExecStop=/bin/kill -s QUIT \$MAINPID
 PrivateTmp=true
 EOF
 
-  echo "enabling nginx.service"
+  debug "enabling nginx.service"
   systemctl -l enable nginx.service || \
     { error "failed to enable nginx.service"; return; }
 
-  echo "starting nginx.service"
+  debug "starting nginx.service"
   systemctl -l start nginx.service || \
     { error "failed to start nginx.service"; return; }
+
+  debug "installed nginx"
 }
 
 install_coredns() {
+  info "installing coredns"
+
   # Do not install CoreDNS on worker nodes.
   [ "${NODE_TYPE}" = "worker" ] && return
 
   # Create the coredns user if it doesn't exist.
   if ! getent passwd coredns >/dev/null 2>&1; then 
-    echo "creating coredns user"
+    debug "creating coredns user"
     useradd coredns --home /var/lib/coredns --no-user-group --system -M || \
       { error "failed to create coredns user"; return; }
   fi
 
-  echo "creating directories for CoreDNS"
+  debug "creating directories for CoreDNS"
   mkdir -p /etc/coredns /var/lib/coredns
   chown coredns /var/lib/coredns || \
     { error "failed to chown /var/lib/coredns"; return; }
 
-  echo "generating certs for coredns"
+  debug "generating certs for coredns"
   (TLS_KEY_OUT=/etc/ssl/coredns.key \
     TLS_CRT_OUT=/etc/ssl/coredns.crt \
     TLS_KEY_UID=coredns TLS_CRT_UID=coredns \
@@ -1509,7 +1576,7 @@ install_coredns() {
   dns_zones="${NETWORK_DOMAIN} 0.0.0.0/0"
   [ -n "${EXTERNAL_FQDN}" ] && dns_zones="${EXTERNAL_FQDN}. ${dns_zones}"
 
-  echo "writing /etc/coredns/Corefile"
+  debug "writing /etc/coredns/Corefile"
   cat <<EOF > /etc/coredns/Corefile
 . {
     log
@@ -1528,7 +1595,7 @@ install_coredns() {
 }
 EOF
 
-  echo "writing /etc/systemd/system/coredns.service"
+  debug "writing /etc/systemd/system/coredns.service"
   cat <<EOF > /etc/systemd/system/coredns.service
 [Unit]
 Description=coredns.service
@@ -1554,16 +1621,20 @@ Restart=on-failure
 ExecStart=/opt/bin/coredns -conf /etc/coredns/Corefile
 EOF
 
-  echo "enabling coredns.service"
+  debug "enabling coredns.service"
   systemctl -l enable coredns.service || \
     { error "failed to enable coredns.service"; return; }
 
-  echo "starting coredns.service"
+  debug "starting coredns.service"
   systemctl -l start coredns.service || \
     { error "failed to start coredns.service"; return; }
+
+  debug "installed coredns"
 }
 
 resolve_via_coredns() {
+  info "configuring DNS resolution against the control plane"
+
   # Even on worker nodes the custom resolv.conf is located in /var/lib/coredns.
   mkdir -p /var/lib/coredns
 
@@ -1588,16 +1659,19 @@ resolve_via_coredns() {
 
   # Link the CoreDNS resolv.conf to /etc/resolv.conf
   ln -s /var/lib/coredns/resolv.conf /etc/resolv.conf
+
+  debug "using control plane for DNS resolution"
 }
 
 # Waits until all of the nodes can be resolved by their IP addresses 
 # via reverse lookup.
 wait_on_reverse_lookup() {
+  info "waiting on all nodes to be resolvable via reverse DNS loopup"
 
   node_ipv4_addresses=$(get_all_node_ipv4_addresses) || \
     { error "failed to get ipv4 addresses for all nodes"; return; }
 
-  echo "waiting on reverse lookup w node ipv4 addresses=${node_ipv4_addresses}"
+  debug "waiting on reverse lookup w node ipv4 addresses=${node_ipv4_addresses}"
 
   # After 100 failed attempts over 5 minutes the function will exit with 
   # an error.
@@ -1606,7 +1680,8 @@ wait_on_reverse_lookup() {
       error "timed out waiting for reverse lookup" 1; return
     fi
 
-    echo "waiting for reverse lookup: attempt ${i}"
+    debug "waiting for reverse lookup: attempt ${i}"
+    printf "."
 
     all_resolve=true
     for a in ${node_ipv4_addresses}; do
@@ -1614,37 +1689,40 @@ wait_on_reverse_lookup() {
     done
 
     if [ "${all_resolve}" = "true" ]; then
-      echo "all nodes resolved via reverse lookup" && break
+      debug "all nodes resolved via reverse lookup" && break
     fi
 
     sleep 3
     i=$((i+1))
   done
+
+  info "all nodes resolving"
 }
 
 # If NetworkManager is present, this function causes NetworkManager to
 # stop trying to manage DNS so that the custom resolv.conf file created
 # by this script will not be overriden.
 disable_net_man_dns() {
-  if [ -d "/etc/NetworkManager/conf.d" ]; then
-    echo "disabling network manager dns"
-    cat <<EOF > /etc/NetworkManager/conf.d/00-do-not-manage-dns.conf
+  [ -d "/etc/NetworkManager/conf.d" ] || return 0
+  info "disabling network manager dns"
+  cat <<EOF > /etc/NetworkManager/conf.d/00-do-not-manage-dns.conf
 [main]
 dns=none
 rc-manager=unmanaged
 EOF
-  fi
 }
 
 # Creates a sane shell prompt for logged-in users that includes the 
 # last exit code.
 configure_prompt() {
+  info "configuring prompt"
   echo '#!/bin/sh' > /etc/profile.d/prompt.sh
   echo 'export PS1="[\$?]\[\e[32;1m\]\u\[\e[0m\]@\[\e[32;1m\]\h\[\e[0m\]:\W$ \[\e[0m\]"' >> /etc/profile.d/prompt.sh
 }
 
 # Adds ${BIN_DIR} to the PATH for logged-in users.
 configure_path() {
+  info "configuring path"
   cat <<EOF > /etc/default/path
 PATH=${BIN_DIR}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 EOF
@@ -1668,7 +1746,7 @@ put_node_info() {
   fi
   
   node_info_key="/yakity/nodes/${NODE_INDEX}"
-  echo "node info key=${node_info_key}"
+  debug "node info key=${node_info_key}"
   
   cat <<EOF | put_stdin "${node_info_key}" || \
     { error "failed to put node info"; return; }
@@ -1682,7 +1760,7 @@ put_node_info() {
 }
 EOF
 
-  echo "put node info at ${node_info_key}"
+  debug "put node info at ${node_info_key}"
 }
 
 get_all_node_info() {
@@ -1695,11 +1773,13 @@ get_all_node_ipv4_addresses() {
 
 # Polls etcd until all nodes have uploaded their information.
 wait_on_all_node_info() {
+  info "waiting on all nodes to join the cluster"
   # After 100 failed attempts over 5 minutes the function will exit with 
   # an error.
   i=0 && while true; do
     [ "${i}" -gt 100 ] && { error "timed out waiting for node info" 1; return; }
-    echo "waiting for all node info: poll attempt ${i}"
+    debug "waiting for all node info: poll attempt ${i}"
+    printf "."
     
     # Break out of the loop if the number of nodes that have stored
     # their info matches the number of expected nodes.
@@ -1709,6 +1789,7 @@ wait_on_all_node_info() {
     sleep 3
     i=$((i+1))
   done
+  info "all nodes have joined the cluster"
 }
 
 # Prints the information each node uploaded about itself to the etcd server.
@@ -1717,14 +1798,17 @@ print_all_node_info() {
     node_info_key="/yakity/nodes/${i}"
     node_info=$(etcdctl get "${node_info_key}" --print-value-only) || break
     [ -z "${node_info}" ] && break
-    echo "${node_info_key}"
-    echo "${node_info}" | jq '' || \
-      { error "problem printing node info"; return; }
+    if ! node_info_val=$(echo "${node_info}" | jq ''); then
+      error "problem printing node info for ${node_info_key}"; return
+    fi
+    info "  ${node_info_key}=${node_info_val}"
     i=$((i+1))
   done
 }
 
 install_cni_plugins() {
+  info "installing CNI plug-ins"
+
   # Symlink CNI_BIN_DIR to /opt/cni/bin since Kubernetes --cni-bin-dir
   # flag does not seem to work, and containers fail if the CNI plug-ins
   # are not accessible in the default location.
@@ -1734,7 +1818,7 @@ install_cni_plugins() {
 
   mkdir -p /etc/cni/net.d/
 
-  echo "writing /etc/cni/net.d/10-bridge.conf"
+  debug "writing /etc/cni/net.d/10-bridge.conf"
   cat <<EOF > /etc/cni/net.d/10-bridge.conf
 {
   "cniVersion": "0.3.1",
@@ -1761,24 +1845,28 @@ install_cni_plugins() {
 }
 EOF
 
-  echo "writing /etc/cni/net.d/99-loopback.conf"
+  debug "writing /etc/cni/net.d/99-loopback.conf"
   cat <<EOF >/etc/cni/net.d/99-loopback.conf
 {
   "cniVersion": "0.3.1",
   "type": "loopback"
 }
 EOF
+
+  debug "installed CNI plug-ins"
 }
 
 install_containerd() {
-  echo "creating directories for containerd"
+  info "installing containerd"
+
+  debug "creating directories for containerd"
   mkdir -p  /etc/containerd \
             /opt/containerd \
             /var/lib/containerd \
             /var/run/containerd
 
   if echo "${CONTAINERD_VERSION}" | grep -q '^1.1'; then
-    echo "writing 1.1.x /etc/containerd/config.toml"
+    debug "writing 1.1.x /etc/containerd/config.toml"
     cat <<EOF >/etc/containerd/config.toml
 [plugins]
   [plugins.cri.containerd]
@@ -1793,7 +1881,7 @@ install_containerd() {
       runtime_root = "/var/run/containerd/runsc"
 EOF
   else
-    echo "writing 1.2.x /etc/containerd/config.toml"
+    debug "writing 1.2.x /etc/containerd/config.toml"
     cat <<EOF >/etc/containerd/config.toml
 root = "/var/lib/containerd"
 state = "/var/run/containerd"
@@ -1820,7 +1908,7 @@ subreaper = true
 EOF
 fi
 
-  echo "writing /etc/systemd/system/containerd.service"
+  debug "writing /etc/systemd/system/containerd.service"
   cat <<EOF >/etc/systemd/system/containerd.service
 [Unit]
 Description=containerd.service
@@ -1846,17 +1934,22 @@ ExecStartPre=/usr/sbin/modprobe overlay
 ExecStart=/opt/bin/containerd
 EOF
 
-  echo "enabling containerd service"
+  debug "enabling containerd service"
   systemctl -l enable containerd.service || \
     { error "failed to enable containerd.service"; return; }
 
-  echo "starting containerd service"
+  debug "starting containerd service"
   systemctl -l start containerd.service || \
     { error "failed to start containerd.service"; return; }
+
+  debug "installed containerd"
 }
 
 install_cloud_provider() {
   { [ -z "${CLOUD_PROVIDER}" ] || [ -z "${CLOUD_CONFIG}" ]; } && return
+
+  info "installing cloud provider ${CLOUD_PROVIDER}"
+
   mkdir -p /var/lib/kubernetes/
   EXT_CLOUD_PROVIDER_OPTS=" --cloud-provider='${CLOUD_PROVIDER}'"
   if [ ! "${CLOUD_PROVIDER}" = "external" ]; then
@@ -1867,7 +1960,7 @@ install_cloud_provider() {
 }
 
 install_kube_apiserver() {
-  echo "installing kube-apiserver"
+  info "installing kube-apiserver"
 
   cat <<EOF > /etc/default/kube-apiserver
 # Copied from http://bit.ly/2niZlvx
@@ -1922,17 +2015,19 @@ EnvironmentFile=/etc/default/kube-apiserver
 ExecStart=/opt/bin/kube-apiserver \$APISERVER_OPTS
 EOF
 
-  echo "enabling kube-apiserver.service"
+  debug "enabling kube-apiserver.service"
   systemctl -l enable kube-apiserver.service || \
     { error "failed to enable kube-apiserver.service"; return; }
 
-  echo "starting kube-apiserver.service"
+  debug "starting kube-apiserver.service"
   systemctl -l start kube-apiserver.service || \
     { error "failed to start kube-apiserver.service"; return; }
+
+  debug "installed kube-apiserver"
 }
 
 install_kube_controller_manager() {
-  echo "installing kube-controller-manager"
+  info "installing kube-controller-manager"
 
   cat <<EOF >/etc/default/kube-controller-manager
 CONTROLLER_OPTS="--address=0.0.0.0${CLOUD_PROVIDER_OPTS} \\
@@ -1967,17 +2062,19 @@ EnvironmentFile=/etc/default/kube-controller-manager
 ExecStart=/opt/bin/kube-controller-manager \$CONTROLLER_OPTS
 EOF
 
-  echo "enabling kube-controller-manager.service"
+  debug "enabling kube-controller-manager.service"
   systemctl -l enable kube-controller-manager.service || \
     { error "failed to enable kube-controller-manager.service"; return; }
 
-  echo "starting kube-controller-manager.service"
+  debug "starting kube-controller-manager.service"
   systemctl -l start kube-controller-manager.service || \
     { error "failed to start kube-controller-manager.service"; return; }
+
+  debug "installed kube-controller-manager"
 }
 
 install_kube_scheduler() {
-  echo "installing kube-scheduler"
+  info "installing kube-scheduler"
 
 #  cat <<EOF > /var/lib/kube-scheduler/kube-scheduler-config.yaml
 #apiVersion: ${KUBE_SCHEDULER_API_VERSION}
@@ -2012,17 +2109,19 @@ EnvironmentFile=/etc/default/kube-scheduler
 ExecStart=/opt/bin/kube-scheduler \$SCHEDULER_OPTS
 EOF
 
-  echo "enabling kube-scheduler.service"
+  debug "enabling kube-scheduler.service"
   systemctl -l enable kube-scheduler.service || \
     { error "failed to enable kube-scheduler.service"; return; }
 
-  echo "starting kube-scheduler.service"
+  debug "starting kube-scheduler.service"
   systemctl -l start kube-scheduler.service || \
     { error "failed to start kube-scheduler.service"; return; }
+
+  debug "installed kube-scheduler"
 }
 
 install_kubelet() {
-  echo "installing kubelet"
+  info "installing kubelet"
 
   cat <<EOF > /var/lib/kubelet/kubelet-config.yaml
 kind: KubeletConfiguration
@@ -2079,17 +2178,19 @@ EnvironmentFile=/etc/default/kubelet
 ExecStart=/opt/bin/kubelet \$KUBELET_OPTS
 EOF
 
-  echo "enabling kubelet.service"
+  debug "enabling kubelet.service"
   systemctl -l enable kubelet.service || \
     { error "failed to enable kubelet.service"; return; }
 
-  echo "starting kubelet.service"
+  debug "starting kubelet.service"
   systemctl -l start kubelet.service || \
     { error "failed to start kubelet.service"; return; }
+
+  debug "installed kubelet"
 }
 
 install_kube_proxy() {
-  echo "installing kube-proxy"
+  info "installing kube-proxy"
 
 #  cat <<EOF > /var/lib/kube-proxy/kube-proxy-config.yaml
 #kind: KubeProxyConfiguration
@@ -2125,13 +2226,15 @@ EnvironmentFile=/etc/default/kube-proxy
 ExecStart=/opt/bin/kube-proxy \$KUBE_PROXY_OPTS
 EOF
 
-  echo "enabling kube-proxy.service"
+  debug "enabling kube-proxy.service"
   systemctl -l enable kube-proxy.service || \
     { error "failed to enable kube-proxy.service"; return; }
 
-  echo "starting kube-proxy.service"
+  debug "starting kube-proxy.service"
   systemctl -l start kube-proxy.service || \
     { error "failed to start kube-proxy.service"; return; }
+
+  debug "installed kube-proxy"
 }
 
 fetch_tls() {
@@ -2194,25 +2297,25 @@ generate_or_fetch_shared_kubernetes_assets() {
     { error "failed to get name of init node"; return; }
 
   if [ -n "${name_of_init_node}" ]; then
-    echo "shared assets already generated on ${name_of_init_node}"
+    info "shared assets already generated on ${name_of_init_node}"
 
     # Fetch shared controller assets.
     if [ ! "${NODE_TYPE}" = "worker" ]; then
-      echo "fetching shared kube-apiserver cert/key pair"
+      debug "fetching shared kube-apiserver cert/key pair"
       fetch_tls "${shared_tls_apiserver_crt_key}" \
                 "${shared_tls_apiserver_key_key}" \
                 /etc/ssl/kube-apiserver.crt \
                 /etc/ssl/kube-apiserver.key || \
         { error "failed to fetch shared kube-apiserver cert/key pair"; return; }
 
-      echo "fetching shared service accounts cert/key pair"
+      debug "fetching shared service accounts cert/key pair"
       fetch_tls "${shared_tls_svc_accts_crt_key}" \
                 "${shared_tls_svc_accts_key_key}" \
                 /etc/ssl/k8s-service-accounts.crt \
                 /etc/ssl/k8s-service-accounts.key || \
         { error "failed to fetch shared service accounts cert/key pair"; return; }
 
-      echo "fetching shared k8s-admin kubeconfig"
+      debug "fetching shared k8s-admin kubeconfig"
       fetch_kubeconfig "${shared_kfg_admin_key}" \
                        /var/lib/kubernetes/kubeconfig || \
         { error "failed to fetch shared k8s-admin kubeconfig"; return; }
@@ -2224,17 +2327,17 @@ generate_or_fetch_shared_kubernetes_assets() {
       chown root:k8s-admin /var/lib/kubernetes/kubeconfig || \
         { error "failed to chown /var/lib/kubernetes/kubeconfig"; return; }
 
-      echo "fetching shared kube-controller-manager kubeconfig"
+      debug "fetching shared kube-controller-manager kubeconfig"
       fetch_kubeconfig "${shared_kfg_controller_manager_key}" \
                        /var/lib/kube-controller-manager/kubeconfig || \
         { error "failed to fetch shared kube-controller-manager kubeconfig"; return; }
 
-      echo "fetching shared kube-scheduler kubeconfig"
+      debug "fetching shared kube-scheduler kubeconfig"
       fetch_kubeconfig "${shared_kfg_scheduler_key}" \
                        /var/lib/kube-scheduler/kubeconfig || \
         { error "failed to fetch shared kube-scheduler kubeconfig"; return; }
 
-      echo "fetching shared encryption key"
+      debug "fetching shared encryption key"
       etcdctl get "${shared_enc_key_key}" --print-value-only > \
         /var/lib/kubernetes/encryption-config.yaml || \
         { error "failed to fetch shared encryption key"; return; }
@@ -2242,30 +2345,31 @@ generate_or_fetch_shared_kubernetes_assets() {
 
     # Fetch shared worker assets.
     if [ ! "${NODE_TYPE}" = "controller" ]; then
-      echo "fetching shared kube-proxy cert/key pair"
+      debug "fetching shared kube-proxy cert/key pair"
       fetch_tls "${shared_tls_kube_proxy_crt_key}" \
                 "${shared_tls_kube_proxy_key_key}" \
                 /etc/ssl/kube-proxy.crt \
                 /etc/ssl/kube-proxy.key || \
         { error "failed to fetch shared kube-proxy cert/key pair"; return; }
 
-      echo "fetching shared kube-proxy kubeconfig"
+      debug "fetching shared kube-proxy kubeconfig"
       fetch_kubeconfig "${shared_kfg_kube_proxy_key}" \
                        /var/lib/kube-proxy/kubeconfig || \
         { error "failed to fetch shared kube-proxy kubeconfig"; return; }
     fi
 
-    echo "fetched all shared assets" && return
+    info "fetched all shared assets from ${name_of_init_node}" && return
   fi
 
   # At this point the lock has been obtained and it's known that no other
   # node has run the initialization routine.
+  info "generating shared asssets"
 
   # Indicate that the init process is running on this node.
   put_string "${init_node_key}" "${HOST_FQDN}" || \
     { error "failed to put ${init_node_key}=${HOST_FQDN}"; return; }
 
-  echo "generating shared kube-apiserver x509 cert/key pair"
+  debug "generating shared kube-apiserver x509 cert/key pair"
   kube_apiserver_san_ip="127.0.0.1 ${SERVICE_IPV4_ADDRESS} ${CONTROLLER_IPV4_ADDRESSES}"
   kube_apiserver_san_dns="localhost ${CLUSTER_FQDN} ${SERVICE_FQDN} ${SERVICE_NAME}.default"
   if [ -n "${EXTERNAL_FQDN}" ]; then
@@ -2282,7 +2386,7 @@ generate_or_fetch_shared_kubernetes_assets() {
     new_cert) || \
     { error "failed to generate shared kube-apiserver x509 cert/key pair"; return; }
 
-  echo "generating shared k8s-admin x509 cert/key pair"
+  debug "generating shared k8s-admin x509 cert/key pair"
   (TLS_KEY_OUT=/etc/ssl/k8s-admin.key \
     TLS_CRT_OUT=/etc/ssl/k8s-admin.crt \
     TLS_SAN=false \
@@ -2291,7 +2395,7 @@ generate_or_fetch_shared_kubernetes_assets() {
     new_cert) || \
     { error "failed to generate shared k8s-admin x509 cert/key pair"; return; }
 
-  echo "generating shared kube-controller-manager x509 cert/key pair"
+  debug "generating shared kube-controller-manager x509 cert/key pair"
   (TLS_KEY_OUT=/etc/ssl/kube-controller-manager.key \
     TLS_CRT_OUT=/etc/ssl/kube-controller-manager.crt \
     TLS_SAN=false \
@@ -2300,7 +2404,7 @@ generate_or_fetch_shared_kubernetes_assets() {
     new_cert) || \
     { error "failed to generate shared kube-controller-manager x509 cert/key pair"; return; }
 
-  echo "generating shared kube-scheduler x509 cert/key pair"
+  debug "generating shared kube-scheduler x509 cert/key pair"
   (TLS_KEY_OUT=/etc/ssl/kube-scheduler.key \
     TLS_CRT_OUT=/etc/ssl/kube-scheduler.crt \
     TLS_SAN=false \
@@ -2309,7 +2413,7 @@ generate_or_fetch_shared_kubernetes_assets() {
     new_cert) || \
     { error "failed to generate shared kube-scheduler x509 cert/key pair"; return; }
 
-  echo "generating shared k8s-service-accounts x509 cert/key pair"
+  debug "generating shared k8s-service-accounts x509 cert/key pair"
   (TLS_KEY_OUT=/etc/ssl/k8s-service-accounts.key \
     TLS_CRT_OUT=/etc/ssl/k8s-service-accounts.crt \
     TLS_SAN=false \
@@ -2317,7 +2421,7 @@ generate_or_fetch_shared_kubernetes_assets() {
     new_cert) || \
     { error "failed to generate shared k8s-service-accounts x509 cert/key pair"; return; }
 
-  echo "generating shared kube-proxy x509 cert/key pair"
+  debug "generating shared kube-proxy x509 cert/key pair"
   (TLS_KEY_OUT=/etc/ssl/kube-proxy.key \
     TLS_CRT_OUT=/etc/ssl/kube-proxy.crt \
     TLS_SAN=false \
@@ -2326,7 +2430,7 @@ generate_or_fetch_shared_kubernetes_assets() {
     new_cert) || \
     { error "failed to generate shared kube-proxy x509 cert/key pair"; return; }
 
-  echo "generating shared k8s-admin kubeconfig"
+  debug "generating shared k8s-admin kubeconfig"
   (KFG_FILE_PATH=/var/lib/kubernetes/kubeconfig \
     KFG_USER=admin \
     KFG_TLS_CRT=/etc/ssl/k8s-admin.crt \
@@ -2337,7 +2441,7 @@ generate_or_fetch_shared_kubernetes_assets() {
     new_kubeconfig) || \
     { error "failed to generate shared k8s-admin kubeconfig"; return; }
 
-  echo "generating shared public k8s-admin kubeconfig"
+  debug "generating shared public k8s-admin kubeconfig"
   (KFG_FILE_PATH=/var/lib/kubernetes/public.kubeconfig \
     KFG_USER=admin \
     KFG_TLS_CRT=/etc/ssl/k8s-admin.crt \
@@ -2345,7 +2449,7 @@ generate_or_fetch_shared_kubernetes_assets() {
     new_kubeconfig) || \
     { error "failed to generate shared public k8s-admin kubeconfig"; return; }
 
-  echo "generating shared kube-scheduler kubeconfig"
+  debug "generating shared kube-scheduler kubeconfig"
   (KFG_FILE_PATH=/var/lib/kube-scheduler/kubeconfig \
     KFG_USER="system:kube-scheduler" \
     KFG_TLS_CRT=/etc/ssl/kube-scheduler.crt \
@@ -2354,7 +2458,7 @@ generate_or_fetch_shared_kubernetes_assets() {
     new_kubeconfig) || \
     { error "failed to generate shared kube-scheduler kubeconfig"; return; }
 
-  echo "generating shared kube-controller-manager kubeconfig"
+  debug "generating shared kube-controller-manager kubeconfig"
   (KFG_FILE_PATH=/var/lib/kube-controller-manager/kubeconfig \
     KFG_USER="system:kube-controller-manager" \
     KFG_TLS_CRT=/etc/ssl/kube-controller-manager.crt \
@@ -2364,7 +2468,7 @@ generate_or_fetch_shared_kubernetes_assets() {
     new_kubeconfig) || \
     { error "failed to generate shared kube-controller-manager kubeconfig"; return; }
 
-  echo "generating shared kube-proxy kubeconfig"
+  debug "generating shared kube-proxy kubeconfig"
   (KFG_FILE_PATH=/var/lib/kube-proxy/kubeconfig \
     KFG_USER="system:kube-proxy" \
     KFG_TLS_CRT=/etc/ssl/kube-proxy.crt \
@@ -2372,7 +2476,7 @@ generate_or_fetch_shared_kubernetes_assets() {
     new_kubeconfig) || \
     { error "failed to generate shared kube-proxy kubeconfig"; return; }
 
-  echo "generating shared encryption-config"
+  debug "generating shared encryption-config"
   cat <<EOF >/var/lib/kubernetes/encryption-config.yaml
 kind: EncryptionConfig
 apiVersion: v1
@@ -2442,7 +2546,7 @@ wait_until_kube_apiserver_is_online() {
 apply_rbac() {
   [ "${NODE_TYPE}" = "worker" ] && return
 
-  echo "configuring kubernetes RBAC"
+  info "configuring kubernetes RBAC"
 
   # Stores the name of the node that configures rbac.
   init_rbac_key="/yakity/init-rbac"
@@ -2452,7 +2556,7 @@ apply_rbac() {
     { error "failed to get name of init node for kubernetes RBAC"; return; }
 
   if [ -n "${name_of_init_node}" ]; then
-    echo "kubernetes RBAC has already been configured from node ${name_of_init_node}"
+    info "kubernetes RBAC has already been configured from node ${name_of_init_node}"
     return
   fi
 
@@ -2485,7 +2589,7 @@ rules:
       - "*"
 EOF
 
-  echo "configure kubernetes RBAC - creating ClusterRole"
+  debug "configure kubernetes RBAC - creating ClusterRole"
   kubectl apply -f /var/lib/kubernetes/create-cluster-role.yaml || \
     { error "failed to configure kubernetes RBAC - create ClusterRole"; return; }
 
@@ -2507,25 +2611,25 @@ subjects:
     name: ${CLUSTER_ADMIN}
 EOF
 
-  echo "configure kubernetes RBAC - binding ClusterRole"
+  debug "configure kubernetes RBAC - binding ClusterRole"
   kubectl apply -f /var/lib/kubernetes/bind-cluster-role.yaml || \
     { error "failed to configure kubernetes RBAC - bind ClusterRole"; return; }
 
-  echo "kubernetes RBAC has been configured"
+  debug "kubernetes RBAC has been configured"
 }
 
 # Configures kubernetes to use CoreDNS for service DNS resolution.
 apply_service_dns_with_coredns() {
-  echo "configuring kubernetes service DNS with CoreDNS"
+  info "configuring kubernetes service DNS with CoreDNS"
 
   # Reverse the service CIDR and remove the subnet notation so the
   # value can be used as for reverse DNS lookup.
   rev_service_cidr="$(reverse_ipv4_address "${SERVICE_CIDR}")"
   ipv4_inaddr_arpa="${rev_service_cidr}.in-addr.arpa"
-  echo "service dns ipv4 inaddr arpa=${ipv4_inaddr_arpa}"
+  debug "service dns ipv4 inaddr arpa=${ipv4_inaddr_arpa}"
 
   # Write the podspec to disk.
-  echo "writing service DNS podspec"
+  debug "writing service DNS podspec"
   cat <<EOF >/var/lib/kubernetes/kube-dns-podspec.yaml
 apiVersion: v1
 kind: ServiceAccount
@@ -2694,11 +2798,13 @@ spec:
     port: 53
     protocol: TCP
 EOF
+
+  debug "configured kubernetes service DNS with CoreDNS"
 }
 
 # Configures kubernetes to use kube-dns for service DNS resolution.
 apply_service_dns_with_kube_dns() {
-  echo "configuring kubernetes service DNS with kube-dns"
+  info "configuring kubernetes service DNS with kube-dns"
 
   cat <<EOF >/var/lib/kubernetes/kube-dns-podspec.yaml
 # Copyright 2016 The Kubernetes Authors.
@@ -2907,13 +3013,15 @@ spec:
       dnsPolicy: Default  # Don't use cluster DNS.
       serviceAccountName: kube-dns
 EOF
+
+  debug "configured kubernetes service DNS with kube-dns"
 }
 
 # Configures kubernetes to use CoreDNS for service DNS resolution.
 apply_service_dns() {
   [ "${NODE_TYPE}" = "worker" ] && return
 
-  echo "configuring kubernetes service DNS"
+  info "configuring kubernetes service DNS"
 
   # Stores the name of the node that configures service DNS.
   init_svc_dns_key="/yakity/init-service-dns"
@@ -2923,7 +3031,7 @@ apply_service_dns() {
     { error "failed to get name of init node for kubernetes service DNS"; return; }
 
   if [ -n "${name_of_init_node}" ]; then
-    echo "kubernetes service DNS has already been configured from node ${name_of_init_node}"
+    info "kubernetes service DNS has already been configured from node ${name_of_init_node}"
     return
   fi
 
@@ -2943,7 +3051,7 @@ apply_service_dns() {
   kubectl create -f /var/lib/kubernetes/kube-dns-podspec.yaml || \
     { error "failed to configure kubernetes service DNS"; return; }
 
-  echo "configured kubernetes service DNS"
+  debug "configured kubernetes service DNS"
 }
 
 apply_ccm_vsphere() {
@@ -3024,10 +3132,12 @@ EOF
   kubectl create -f /var/lib/kubernetes/ccm-vsphere.yaml || \
     { error "failed to configure CCM for vSphere"; return; }
 
-  echo "configured CCM for vSphere"
+  debug "configured CCM for vSphere"
 }
 
 apply_ccm_rbac() {
+  info "applying CCM RBAC"
+
   cat <<EOF >/var/lib/kubernetes/ccm-roles.yaml
 apiVersion: v1
 items:
@@ -3209,10 +3319,12 @@ EOF
   kubectl create -f /var/lib/kubernetes/ccm-role-bindings.yaml || \
     { error "failed to configure CCM role bindings"; return; }
 
-  echo "configured CCM RBAC"
+  debug "configured CCM RBAC"
 }
 
 apply_ccm_configmaps() {
+  info "creating CCM configmaps"
+
   # Create a directory to generate files for the CCM.
   mkdir -p /var/lib/kubernetes/.ccm
 
@@ -3222,7 +3334,7 @@ apply_ccm_configmaps() {
   for f in /etc/ssl/certs/*.crt; do
     rf=$(readlink "${f}") || rf="${f}"
     cp -f "${rf}" /var/lib/kubernetes/.ccm
-    echo "adding '${rf}' to ca-certs"
+    debug "adding '${rf}' to ca-certs"
   done
 
   # Create a config map with all of the host's trusted certs.
@@ -3230,12 +3342,12 @@ apply_ccm_configmaps() {
     --from-file=/var/lib/kubernetes/.ccm/ \
     --namespace=kube-system || \
   { error "failed to create ca-certs configmap"; return; }
-  echo "created ca-certs configmap"
+  debug "created ca-certs configmap"
 
   # Remove the certs from the CCM directory.
   rm -f /var/lib/kubernetes/.ccm/*.crt
 
-  echo "generating CCM x509 cert/key pair"
+  debug "generating CCM x509 cert/key pair"
   (TLS_KEY_OUT=/var/lib/kubernetes/.ccm/key.pem \
     TLS_CRT_OUT=/var/lib/kubernetes/.ccm/crt.pem \
     TLS_SAN=false \
@@ -3245,7 +3357,7 @@ apply_ccm_configmaps() {
     { error "failed to generate CCM x509 cert/key pair"; return; }
 
   # Generate the CCM's kubeconfig.
-  echo "generating CCM kubeconfig"
+  debug "generating CCM kubeconfig"
   (KFG_FILE_PATH=/var/lib/kubernetes/.ccm/kubeconfig \
     KFG_USER="cloud-controller-manager" \
     KFG_TLS_CRT=/var/lib/kubernetes/.ccm/crt.pem \
@@ -3264,7 +3376,7 @@ apply_ccm_configmaps() {
     echo "${CLOUD_CONFIG}" | \
       base64 -d | \
       gzip -d >/var/lib/kubernetes/.ccm/cloud-provider.conf
-    echo "created cloud-provider.conf for CCM"
+    debug "created cloud-provider.conf for CCM"
   fi
 
   # Create a configmap with the CCM's kubeconfig and cloud-provider
@@ -3273,17 +3385,19 @@ apply_ccm_configmaps() {
     --from-file=/var/lib/kubernetes/.ccm/ \
     --namespace=kube-system || \
   { error "failed to create cloud-config configmap"; return; }
-  echo "created cloud-config configmap"
+  debug "created cloud-config configmap"
 
   # Remove the CCM directory.
   rm -fr /var/lib/kubernetes/.ccm
+
+  debug "created config maps for CCM"
 }
 
 apply_ccm() {
   [ "${CLOUD_PROVIDER}" = "external" ] || return
   [ "${NODE_TYPE}" = "worker" ] && return
 
-  echo "configuring CCM"
+  info "configuring CCM"
 
   # Stores the name of the node that configures the cloud-provider.
   init_ccm_key="/yakity/init-cloud-provider"
@@ -3293,7 +3407,7 @@ apply_ccm() {
     { error "failed to get name of init node for CCM"; return; }
 
   if [ -n "${name_of_init_node}" ]; then
-    echo "CCM has already been configured from node ${name_of_init_node}"
+    info "CCM has already been configured from node ${name_of_init_node}"
     return
   fi
 
@@ -3310,14 +3424,14 @@ apply_ccm() {
     *) { error "invalid cloud provider=${CLOUD_PROVIDER_EXTERNAL}" 1; return; }
   esac
 
-  echo "configured CCM"
+  debug "configured CCM"
 }
 
 apply_manifest() {
   [ "${NODE_TYPE}" = "worker" ] && return
 
   op_name="manifest-${1}"
-  echo "applying ${op_name}"
+  info "applying ${op_name}"
 
   # Stores the name of the node that applies the manifest.
   init_node_key="/yakity/apply-${op_name}"
@@ -3327,7 +3441,7 @@ apply_manifest() {
     { error "failed to get name of init node for ${op_name}"; return; }
 
   if [ -n "${name_of_init_node}" ]; then
-    echo "${op_name} has already been applied on ${name_of_init_node}"
+    info "${op_name} has already been applied on ${name_of_init_node}"
     return
   fi
 
@@ -3338,7 +3452,7 @@ apply_manifest() {
   echo "${2}" | base64 -d | gzip -d | kubectl create -f - || \
     { error "error applying ${op_name}"; return; }
 
-  echo "applied ${op_name}"
+  debug "applied ${op_name}"
 }
 
 apply_manifest_before_rbac() {
@@ -3366,20 +3480,20 @@ create_k8s_admin_group() {
 }
 
 wait_for_healthy_kubernetes_cluster() {
-  echo "waiting until the kubernetes control plane is online"
+  info "waiting until the kubernetes control plane is online"
   # Wait until the kubernetes health check reports "ok". After 100 failed 
   # attempts over 5 minutes the script will exit with an error.
   i=1 && while true; do
     if [ "${i}" -gt 100 ]; then
       error "timed out waiting for a healthy kubernetes cluster" 1; return
     fi
-    echo "control plane health check attempt: ${i}"
+    debug "control plane health check attempt: ${i}"
     response=$(${CURL} -sSL "http://${CLUSTER_FQDN}/healthz")
     [ "${response}" = "ok" ] && break
     sleep 3
     i=$((i+1))
   done
-  echo "kubernetes cluster is healthy"
+  info "kubernetes cluster is healthy"
 }
 
 install_kube_apiserver_and_wait_until_its_online() {
@@ -3407,9 +3521,9 @@ apply_rbac_and_manifests() {
 install_kubernetes_test() {
   [ "${INSTALL_CONFORMANCE_TESTS}" = "true" ] || return 0
 
-  echo "installing e2e"
+  info "installing e2e conformance tests"
 
-  echo "creating e2e job yaml"
+  debug "creating e2e job yaml"
   cat <<EOF >/var/lib/kubernetes/e2e-job.yaml
 apiVersion: batch/v1
 kind: Job
@@ -3476,7 +3590,7 @@ EOF
     { error "failed to get name of init node for e2e"; return; }
 
   if [ -n "${name_of_init_node}" ]; then
-    echo "e2e has already been applied on ${name_of_init_node}"
+    info "e2e has already been applied on ${name_of_init_node}"
     return
   fi
 
@@ -3494,44 +3608,45 @@ metadata:
 EOF
 
   # Create the e2e namespace.
-  echo "creating e2e namespace"
+  debug "creating e2e namespace"
   kubectl create -f /var/lib/kubernetes/e2e-namespace.yaml || \
     { error "failed to create e2e namespace"; return; }
 
-  echo "fetching shared public k8s-admin kubeconfig"
+  debug "fetching shared public k8s-admin kubeconfig"
   fetch_kubeconfig "${shared_kfg_public_admin_key}" \
                    /var/lib/kubernetes/e2e.kubeconfig || \
     { error "failed to fetch e2e kubeconfig"; return; }
 
-  echo "creating e2e secret kubeconfig"
+  debug "creating e2e secret kubeconfig"
   kubectl create -n e2e secret generic kubeconfig \
     --from-file=kubeconfig=/var/lib/kubernetes/e2e.kubeconfig || \
     { error "failed to create e2e kubeconfig"; return; }
   rm -f /var/lib/kubernetes/e2e.kubeconfig
 
-  echo "installed e2e"
+  debug "installed e2e conformance tests"
 
   if [ "${RUN_CONFORMANCE_TESTS}" = "true" ]; then
-    echo "running conformance tests"
+    info "scheduling e2e conformance test job spec"
     kubectl -n e2e create -f /var/lib/kubernetes/e2e-job.yaml || \
-    { error "failed to start e2e job"; return; }
+      { error "failed to start e2e job"; return; }
+    debug "scheduled e2e conformance test job spec"
   fi
 }
 
 install_kubernetes() {
-  echo "installing kubernetes"
+  info "installing kubernetes"
 
-  echo "installing the cloud provider"
+  debug "installing the cloud provider"
   install_cloud_provider || \
     { error "failed to install cloud provider"; return; }
 
-  echo "generating or fetching shared kubernetes assets"
+  debug "generating or fetching shared kubernetes assets"
   do_with_lock generate_or_fetch_shared_kubernetes_assets || \
     { error "failed to generate or fetch shared kubernetes assets"; return; }
 
   # If the node isn't explicitly a worker then install the controller bits.
   if [ ! "${NODE_TYPE}" = "worker" ]; then
-    echo "installing kubernetes control plane"
+    info "installing kubernetes control plane components"
 
     # The rest of this process will be able to use the exported KUBECONFIG.
     export KUBECONFIG=/var/lib/kubernetes/kubeconfig
@@ -3548,7 +3663,7 @@ id | grep -q 'uid=0\\|k8s-admin' && \\
   export KUBECONFIG=/var/lib/kubernetes/kubeconfig
 EOF
 
-    echo "creating directories for kubernetes control plane"
+    debug "creating directories for kubernetes control plane"
     mkdir -p  /var/lib/kubernetes \
               /var/lib/kube-apiserver \
               /var/lib/kube-controller-manager \
@@ -3586,18 +3701,20 @@ EOF
 
     do_with_lock apply_manifest_after_all || \
       { error "failed to apply manifest-after-all"; return; }
+
+    debug "installed kubernetes control plane components"
   fi
 
   # If the node isn't explicitly a controller then install the worker bits.
   if [ ! "${NODE_TYPE}" = "controller" ]; then
-    echo "installing kubernetes worker components"
+    info "installing kubernetes worker components"
 
-    echo "creating directories for kubernetes worker"
+    debug "creating directories for kubernetes worker"
     mkdir -p  /var/lib/kubernetes \
               /var/lib/kubelet \
               /var/lib/kube-proxy
 
-    echo "generating kubelet x509 cert/key pair"
+    debug "generating kubelet x509 cert/key pair"
     (TLS_KEY_OUT=/etc/ssl/kubelet.key \
       TLS_CRT_OUT=/etc/ssl/kubelet.crt \
       TLS_ORG_NAME="system:nodes" \
@@ -3605,7 +3722,7 @@ EOF
       new_cert) || \
       { error "failed to generate kubelet x509 cert/key pair"; return; }
 
-    echo "generating kubelet kubeconfig"
+    debug "generating kubelet kubeconfig"
     (KFG_FILE_PATH=/var/lib/kubelet/kubeconfig \
       KFG_USER="system:node:${HOST_FQDN}" \
       KFG_TLS_CRT=/etc/ssl/kubelet.crt \
@@ -3622,11 +3739,15 @@ EOF
       { error "failed to install kubelet"; return; }
     install_kube_proxy || \
       { error "failed to install kube-proxy"; return; }
+
+    debug "installed kubernetes worker components"
   fi
+
+  debug "installed kubernetes"
 }
 
 create_pod_net_routes() {
-  echo "creating routes to pod nets on other nodes"
+  info "creating routes to pod nets on other nodes"
 
   # Create a jq expression that transforms the node info for
   # all nodes but this one into one or more "ip route add"
@@ -3647,14 +3768,14 @@ create_pod_net_routes() {
   for r in $(etcdctl get /yakity/nodes \
             --print-value-only --prefix | \
             jq -rs "${jqq}"); do
-    echo "${r}"
+    debug "${r}"
     /bin/sh -c "${r}" || { exit_code="${?}" && break; }
   done
   IFS="${OLD_IFS}"
   if [ "${exit_code}" -ne "0" ]; then
     error "failed to add routes for pod network" "${exit_code}"; return
   fi
-  echo "created routes for pod network"
+  debug "created routes to pod nets on other nodes"
 }
 
 ################################################################################
@@ -3669,9 +3790,10 @@ download_cni_plugins() {
   fi
   http_ok "${url}" || { error "could not stat ${url}"; return; }
   mkdir -p "${CNI_BIN_DIR}"
-  echo "downloading ${url}"
+  info "downloading ${url}"
   ${CURL} -L "${url}" | tar xzvC "${CNI_BIN_DIR}" || \
     error "failed to download ${url}"
+  debug "downloaded ${url}"
 }
 
 download_containerd() {
@@ -3682,11 +3804,12 @@ download_containerd() {
     url="${url}/v${CONTAINERD_VERSION}/containerd-${CONTAINERD_VERSION}.linux-amd64.tar.gz"
   fi
   http_ok "${url}" || { error "could not stat ${url}"; return; }
-  echo "downloading ${url}"
+  info "downloading ${url}"
   ${CURL} -L "${url}" | tar xzvC "${BIN_DIR}" --strip-components=1
   exit_code="${?}" && \
     [ "${exit_code}" -gt "1" ] && \
     { error "failed to download ${url}" "${exit_code}"; return; }
+  debug "downloaded ${url}"
   return 0
 }
 
@@ -3703,9 +3826,10 @@ download_coredns() {
   fi
 
   http_ok "${url}" || { error "could not stat ${url}"; return; }
-  echo "downloading ${url}"
+  info "downloading ${url}"
   ${CURL} -L "${url}" | tar xzvC "${BIN_DIR}" || \
     error "failed to download ${url}"
+  debug "downloaded ${url}"
 }
 
 download_crictl() {
@@ -3716,9 +3840,10 @@ download_crictl() {
     url="${url}/v${CRICTL_VERSION}/crictl-v${CRICTL_VERSION}-linux-amd64.tar.gz"
   fi
   http_ok "${url}" || { error "could not stat ${url}"; return; }
-  echo "downloading ${url}"
+  info "downloading ${url}"
   ${CURL} -L "${url}" | tar xzvC "${BIN_DIR}" || \
     error "failed to download ${url}"
+  debug "downloaded ${url}"
 }
 
 download_etcd() {
@@ -3729,13 +3854,14 @@ download_etcd() {
     url="${url}/v${ETCD_VERSION}/etcd-v${ETCD_VERSION}-linux-amd64.tar.gz"
   fi
   http_ok "${url}" || { error "could not stat ${url}"; return; }
-  echo "downloading ${url}"
+  info "downloading ${url}"
   ${CURL} -L "${url}" | tar xzvC "${BIN_DIR}" \
     --strip-components=1 --wildcards \
     '*/etcd' '*/etcdctl'
   exit_code="${?}" && \
     [ "${exit_code}" -gt "1" ] && \
     { error "failed to download ${url}" "${exit_code}"; return; }
+  debug "downloaded ${url}"
   
   # If the node is a worker then it doesn't need to install the etcd server.
   [ "${NODE_TYPE}" = "worker" ] && rm -fr "${BIN_DIR}/etcd"
@@ -3751,14 +3877,15 @@ download_jq() {
     url="${url}/jq-${JQ_VERSION}/jq-linux64"
   fi
   http_ok "${url}" || { error "could not stat ${url}"; return; }
-  echo "downloading ${url}"
+  info "downloading ${url}"
   ${CURL} -Lo "${BIN_DIR}/jq" "${url}" || error "failed to download ${url}"
+  debug "downloaded ${url}"
 }
 
 download_kubernetes_node() {
   url="${K8S_ARTIFACT_PREFIX}/kubernetes-node-linux-amd64.tar.gz"
   http_ok "${url}" || { error "could not stat ${url}"; return; }
-  echo "downloading ${url}"
+  info "downloading ${url}"
   ${CURL} -L "${url}" | tar xzvC "${BIN_DIR}" \
     --strip-components=3 --wildcards  \
     --exclude=kubernetes/node/bin/*.tar \
@@ -3767,13 +3894,14 @@ download_kubernetes_node() {
   exit_code="${?}" && \
     [ "${exit_code}" -gt "1" ] && \
     { error "failed to download ${url}" "${exit_code}"; return; }
+  debug "downloaded ${url}"
   return 0
 }
 
 download_kubernetes_server() {
   url="${K8S_ARTIFACT_PREFIX}/kubernetes-server-linux-amd64.tar.gz"
   http_ok "${url}" || { error "could not stat ${url}"; return; }
-  echo "downloading ${url}"
+  info "downloading ${url}"
   ${CURL} -L "${url}" | tar xzvC "${BIN_DIR}" \
     --strip-components=3 --wildcards \
     --exclude=kubernetes/server/bin/*.tar \
@@ -3782,6 +3910,7 @@ download_kubernetes_server() {
   exit_code="${?}" && \
     [ "${exit_code}" -gt "1" ] && \
     { error "failed to download ${url}" "${exit_code}"; return; }
+  debug "downloaded ${url}"
   return 0
 }
 
@@ -3789,8 +3918,9 @@ download_kubernetes_test() {
   [ "${INSTALL_CONFORMANCE_TESTS}" = "true" ] || return 0
   url="${K8S_ARTIFACT_PREFIX}/kubernetes-test.tar.gz"
   http_ok "${url}" || { error "could not stat ${url}"; return; }
-  echo "downloading ${url}"
+  info "downloading ${url}"
   ${CURL} -L "${url}" | tar xzvC /var/lib || error "failed to download ${url}"
+  debug "downloaded ${url}"
 }
 
 download_nginx() {
@@ -3801,9 +3931,10 @@ download_nginx() {
     url="${url}/v${NGINX_VERSION}/nginx.tar.gz"
   fi
   http_ok "${url}" || { error "could not stat ${url}"; return; }
-  echo "downloading ${url}"
+  info "downloading ${url}"
   ${CURL} -L "${url}" | tar xzvC "${BIN_DIR}" || \
     error "failed to download ${url}"
+  debug "downloaded ${url}"
 }
 
 download_runc() {
@@ -3814,8 +3945,9 @@ download_runc() {
     url="${url}/v${RUNC_VERSION}/runc.amd64"
   fi
   http_ok "${url}" || { error "could not stat ${url}"; return; }
-  echo "downloading ${url}"
+  info "downloading ${url}"
   ${CURL} -Lo "${BIN_DIR}/runc" "${url}" || error "failed to download ${url}"
+  debug "downloaded ${url}"
 }
 
 download_runsc() {
@@ -3826,8 +3958,9 @@ download_runsc() {
     url="${url}/${RUNSC_VERSION}/runsc"
   fi
   http_ok "${url}" || { error "could not stat ${url}"; return; }
-  echo "downloading ${url}"
+  info "downloading ${url}"
   ${CURL} -Lo "${BIN_DIR}/runsc" "${url}" || error "failed to download ${url}"
+  debug "downloaded ${url}"
 }
 
 download_binaries() {
@@ -3856,27 +3989,31 @@ download_binaries() {
   # Mark all the files in /opt/bin directory:
   # 1. Executable
   # 2. Owned by root:root
-  echo 'update perms & owner for files in /opt/bin'
+  debug 'update perms & owner for files in /opt/bin'
   chmod 0755 -- "${BIN_DIR}"/*
   chown root:root -- "${BIN_DIR}"/*
 }
 
 install_packages() {
   if command -v yum >/dev/null 2>&1; then
+    info "installing packages via yum"
     yum update --assumeno
-    echo "yum install lsof bind-utils"
+    debug "yum install lsof bind-utils"
     yum -y install lsof bind-utils || true
     if [ ! "${NODE_TYPE}" = "controller" ]; then
-      echo "yum install socat conntrack-tools ipset"
+      debug "yum install socat conntrack-tools ipset"
       yum -y install socat conntrack-tools ipset || true
     fi
+    debug "installed packages via yum"
   elif command -v apt-get >/dev/null 2>&1; then
-    echo "apt-get install lsof dnsutils"
+    info "installing packages via apt-get"
+    debug "apt-get install lsof dnsutils"
     apt-get -y install lsof dnsutils || true
     if [ ! "${NODE_TYPE}" = "controller" ]; then
-      echo "apt-get install socat conntrack ipset"
+      debug "apt-get install socat conntrack ipset"
       apt-get -y install socat conntrack ipset
     fi
+    debug "installed packages via apt-get"
   fi
 }
 
@@ -4008,4 +4145,4 @@ fi
 # installs the kubelet and kube-proxy.
 install_kubernetes || fatal "failed to install kubernetes"
 
-echo "So long, and thanks for all the fish."
+info "So long, and thanks for all the fish."
