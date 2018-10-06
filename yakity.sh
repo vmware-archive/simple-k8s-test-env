@@ -4037,6 +4037,10 @@ init_k8s_artifact_prefix() {
 ##                        main(int argc, char *argv[])                        ##
 ################################################################################
 
+# Writes /etc/default/path and /etc/profile.d/path.sh to make a sane,
+# default path accessible by services and shells.
+configure_path || fatal "failed to configure path"
+
 # Creates /opt/bin/node-type to make discovery the node type very easy.
 create_node_type_cmd || fatal "failed to create node-type command"
 
@@ -4065,10 +4069,6 @@ create_k8s_admin_group || fatal "failed to create the k8s-admin group"
 
 # Configure iptables.
 configure_iptables || fatal "failed to configure iptables"
-
-# Writes /etc/default/path and /etc/profile.d/path.sh to make a sane,
-# default path accessible by services and shells.
-configure_path || fatal "failed to configure path"
 
 # If this host used NetworkManager then this step will keep NetworkManager
 # from stomping on the contents of /etc/resolv.conf upon reboot.
