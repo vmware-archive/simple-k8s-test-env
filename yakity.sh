@@ -120,7 +120,7 @@ if [ -e "${YAK_DEFAULTS}" ]; then
 fi
 
 # Add ${BIN_DIR} to the path
-BIN_DIR="${BIN_DIR:-/opt/bin}"; mkdir -p "${BIN_DIR}"
+BIN_DIR="${BIN_DIR:-/opt/bin}"; mkdir -p "${BIN_DIR}"; chmod 0755 "${BIN_DIR}"
 echo "${PATH}" | grep -qF "${BIN_DIR}" || export PATH="${BIN_DIR}:${PATH}"
 
 # Parse the log level a second time in case the defaults file set the
@@ -1191,6 +1191,7 @@ install_ca_files() {
   fi
 
   mkdir -p /etc/ssl/certs
+  rm -f /etc/ssl/certs/yakity-ca.crt
   ln -s "${TLS_CA_CRT}" /etc/ssl/certs/yakity-ca.crt
   debug "linked ${TLS_CA_CRT} to /etc/ssl/certs/yakity-ca.crt"
 
@@ -3789,6 +3790,9 @@ create_pod_net_routes() {
 ##                           Download Binaries                                ##
 ################################################################################
 download_cni_plugins() {
+  if [ -f "/opt/bin/cni/loopback" ]; then
+    info "already downloaded CNI plug-ins"; return
+  fi
   if is_url "${CNI_PLUGINS_VERSION}"; then
     url="${CNI_PLUGINS_VERSION}"
   else
@@ -3804,6 +3808,9 @@ download_cni_plugins() {
 }
 
 download_containerd() {
+  if [ -f "/opt/bin/containerd" ]; then
+    info "already downloaded containerd"; return
+  fi
   if is_url "${CONTAINERD_VERSION}"; then
     url="${CONTAINERD_VERSION}"
   else
@@ -3821,6 +3828,9 @@ download_containerd() {
 }
 
 download_coredns() {
+  if [ -f "/opt/bin/coredns" ]; then
+    info "already downloaded coredns"; return
+  fi
   if is_url "${COREDNS_VERSION}"; then
     url="${COREDNS_VERSION}"
   else
@@ -3840,6 +3850,9 @@ download_coredns() {
 }
 
 download_crictl() {
+  if [ -f "/opt/bin/crictl" ]; then
+    info "already downloaded crictl"; return
+  fi
   if is_url "${CRICTL_VERSION}"; then
     url="${CRICTL_VERSION}"
   else
@@ -3854,6 +3867,9 @@ download_crictl() {
 }
 
 download_etcd() {
+  if [ -f "/opt/bin/etcd" ]; then
+    info "already downloaded etcd"; return
+  fi
   if is_url "${ETCD_VERSION}"; then
     url="${ETCD_VERSION}"
   else
@@ -3877,6 +3893,9 @@ download_etcd() {
 }
 
 download_jq() {
+  if [ -f "/opt/bin/jq" ]; then
+    info "already downloaded jq"; return
+  fi
   if is_url "${JQ_VERSION}"; then
     url="${JQ_VERSION}"
   else
@@ -3890,6 +3909,9 @@ download_jq() {
 }
 
 download_kubernetes_node() {
+  if [ -f "/opt/bin/kubelet" ]; then
+    info "already downloaded kubernetes node"; return
+  fi
   url="${K8S_ARTIFACT_PREFIX}/kubernetes-node-linux-amd64.tar.gz"
   http_ok "${url}" || { error "could not stat ${url}"; return; }
   info "downloading ${url}"
@@ -3906,6 +3928,9 @@ download_kubernetes_node() {
 }
 
 download_kubernetes_server() {
+  if [ -f "/opt/bin/kube-apiserver" ]; then
+    info "already downloaded kubernetes server"; return
+  fi
   url="${K8S_ARTIFACT_PREFIX}/kubernetes-server-linux-amd64.tar.gz"
   http_ok "${url}" || { error "could not stat ${url}"; return; }
   info "downloading ${url}"
@@ -3922,6 +3947,10 @@ download_kubernetes_server() {
 }
 
 download_kubernetes_test() {
+  if i=$(find /var/lib/kubernetes/platforms -name 'e2e.test' -type f | wc -l) \
+    && [ "${i}" -gt "0" ]; then
+    info "already downloaded kubernetes test"; return
+  fi
   [ "${INSTALL_CONFORMANCE_TESTS}" = "true" ] || return 0
   url="${K8S_ARTIFACT_PREFIX}/kubernetes-test.tar.gz"
   http_ok "${url}" || { error "could not stat ${url}"; return; }
@@ -3931,6 +3960,9 @@ download_kubernetes_test() {
 }
 
 download_nginx() {
+  if [ -f "/opt/bin/nginx" ]; then
+    info "already downloaded nginx"; return
+  fi
   if is_url "${NGINX_VERSION}"; then
     url="${NGINX_VERSION}"
   else
@@ -3945,6 +3977,9 @@ download_nginx() {
 }
 
 download_runc() {
+  if [ -f "/opt/bin/runc" ]; then
+    info "already downloaded runc"; return
+  fi
   if is_url "${RUNC_VERSION}"; then
     url="${RUNC_VERSION}"
   else
@@ -3958,6 +3993,9 @@ download_runc() {
 }
 
 download_runsc() {
+  if [ -f "/opt/bin/runsc" ]; then
+    info "already downloaded runsc"; return
+  fi
   if is_url "${RUNSC_VERSION}"; then
     url="${RUNSC_VERSION}"
   else
@@ -4002,7 +4040,19 @@ download_binaries() {
 }
 
 install_packages() {
-  if command -v yum >/dev/null 2>&1; then
+  # PhotonOS
+  if command -v tdnf >/dev/null 2>&1; then
+    info "installing packages via tdnf"
+    tdnf update --assumeno
+    debug "tdnf install lsof bindutils iputils tar"
+    tdnf -y install lsof bindutils iputils tar || true
+    if [ ! "${NODE_TYPE}" = "controller" ]; then
+      debug "tdnf install socat ipset"
+      tdnf -y install socat ipset || true
+    fi
+    debug "installed packages via tdnf"
+  # RedHat/CentOS
+  elif command -v yum >/dev/null 2>&1; then
     info "installing packages via yum"
     yum update --assumeno
     debug "yum install lsof bind-utils"
@@ -4012,6 +4062,7 @@ install_packages() {
       yum -y install socat conntrack-tools ipset || true
     fi
     debug "installed packages via yum"
+  # Debian/Ubuntu
   elif command -v apt-get >/dev/null 2>&1; then
     info "installing packages via apt-get"
     debug "apt-get install lsof dnsutils"
