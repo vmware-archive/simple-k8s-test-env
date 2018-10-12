@@ -1728,6 +1728,18 @@ rc-manager=unmanaged
 EOF
 }
 
+# If resolved is present then disable it so it does not interfere with
+# CoreDNS.
+disable_resolved() {
+  systemctl is-enabled systemd-resolved >/dev/null 2>&1 || return 0
+  info "diabling systemd-resolved"
+  systemctl disable systemd-resolved >/dev/null 2>&1 || \
+    { error "failed to disable systemd-resolved"; return; }
+  systemctl mask systemd-resolved >/dev/null 2>&1 || \
+    { error "failed to mask systemd-resolved"; return; }
+  debug "disabled systemd-resolved"
+}
+
 # Creates a sane shell prompt for logged-in users that includes the 
 # last exit code.
 configure_prompt() {
@@ -4135,6 +4147,10 @@ create_k8s_admin_group || fatal "failed to create the k8s-admin group"
 
 # Configure iptables.
 configure_iptables || fatal "failed to configure iptables"
+
+# If this host uses systemd-resolved, then this step will disable and
+# mask the service. This is so port 53 is available for CoreDNS.
+disable_resolved || fatal "failed to disable systemd-resolved"
 
 # If this host used NetworkManager then this step will keep NetworkManager
 # from stomping on the contents of /etc/resolv.conf upon reboot.
