@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# posix complaint
+# posix compliant
 # verified by https://www.shellcheck.net
 
 #
@@ -205,19 +205,34 @@ info "  NUM_CONTROLLERS = ${NUM_CONTROLLERS}"
 info "  NUM_NODES       = ${NUM_NODES}"
 
 ################################################################################
-##                                Config                                      ##
+##                               Networking                                   ##
 ################################################################################
-
-HOST_FQDN=$(hostname) || fatal "failed to get host fqdn"
+HOST_FQDN=$(hostname -f) || fatal "failed to get host fqdn"
 HOST_NAME=$(hostname -s) || fatal "failed to get host name"
+
+# If the host's FQDN is the same as the host's name, then it's likely the
+# host doesn't have a domain part set for its host name. This program requires
+# the host to have a valid FQDN. This logic ensures that the host has a valid
+# FQDN by appending ".localdomain" to the host's name.
+if [ "${HOST_FQDN}" = "${HOST_NAME}" ]; then
+  host_fqdn="${HOST_NAME}.${NETWORK_DOMAIN:-localdomain}"
+  info "setting hostname=${host_fqdn}"
+  hostname "${host_fqdn}"
+  HOST_FQDN=$(hostname -f) || fatal "failed to get host fqdn"
+  [ "${HOST_FQDN}" = "${host_fqdn}" ] || \
+    fatal "failed to set hostname: exp=${host_fqdn} act=${HOST_FQDN}"
+fi
+
 IPV4_ADDRESS=$(ip route get 1 | awk '{print $NF;exit}') || \
   fatal "failed to get ipv4 address"
-IPV4_DEFAULT_GATEWAY="$(ip route get 1 | awk '{print $3;exit}')" || \
-  fatal "failed to get ipv4 default gateway"
+
+################################################################################
+##                                 Config                                     ##
+################################################################################
 
 # Network information about the host.
-NETWORK_DOMAIN="${NETWORK_DOMAIN:-$(hostname -d)}"
-NETWORK_IPV4_SUBNET_CIDR="${NETWORK_IPV4_SUBNET_CIDR:-${IPV4_DEFAULT_GATEWAY}/24}"
+NETWORK_DOMAIN="${NETWORK_DOMAIN:-$(hostname -d)}" || \
+  fatal "failed to get host domain"
 NETWORK_DNS_1="${NETWORK_DNS_1:-8.8.8.8}"
 NETWORK_DNS_2="${NETWORK_DNS_2:-8.8.4.4}"
 NETWORK_DNS_SEARCH="${NETWORK_DNS_SEARCH:-${NETWORK_DOMAIN}}"
