@@ -1,0 +1,18 @@
+[Unit]
+Description=yakity.service
+After=network.target syslog.target cloud-final.service rc-local.service
+Wants=cloud-final.service
+ConditionPathExists=!/var/lib/yakity/.yakity.service.done
+
+[Install]
+WantedBy=multi-user.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutSec=0
+WorkingDirectory=/var/lib/yakity
+ExecStartPre=/var/lib/yakity/yakity-update.sh
+ExecStart=/bin/sh /var/lib/yakity/yakity-guestinfo.sh
+ExecStart=/var/lib/yakity/yakity.sh
+ExecStartPost=/bin/touch /var/lib/yakity/.yakity.service.done

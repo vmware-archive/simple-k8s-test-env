@@ -1,0 +1,25 @@
+# Ignore the marker files.
+/.Dockerfile*
+
+# Ignore the private TLS files
+*.crt
+*.key
+*.srl
+
+# Ignore kubeconfig files
+kubeconfig
+
+# Ignore the data directories and secure files
+/.terraform/
+/data
+/*/data
+/.terraform/
+/*.tfstate*
+/secure.auto.tfvars
+/secure.env
+/config.env
+
+# Ignore the hack dir
+/hack/Dockerfile*
+/hack/*.tar.gz
+/hack/Makefile
