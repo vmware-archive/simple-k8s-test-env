@@ -1,0 +1,17 @@
+# Refer to https://github.com/golang/dep/blob/master/docs/Gopkg.toml.md
+# for detailed Gopkg.toml documentation.
+#
+# Refer to https://github.com/toml-lang/toml for detailed TOML docs.
+#
+[prune]
+  non-go = true
+  go-tests = true
+  unused-packages = true
+
+[[constraint]]
+  name = "github.com/vmware/govmomi"
+  version = "0.19.0"
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/vmware/vmw-guestinfo"
