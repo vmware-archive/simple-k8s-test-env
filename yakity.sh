@@ -1488,9 +1488,12 @@ install_nginx() {
             /var/lib/nginx \
             /var/log/nginx
 
+  nogroup_name=nobody
+  id nobody | grep -q nogroup && nogroup_name=nogroup
+
   debug "writing nginx config file=/etc/nginx/nginx.conf"
   cat <<EOF > /etc/nginx/nginx.conf
-user                   nginx nobody;
+user                   nginx ${nogroup_name};
 pid                    /var/run/nginx.pid;
 error_log              syslog:server=unix:/dev/log;
 worker_processes       1;
