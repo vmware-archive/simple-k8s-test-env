@@ -334,15 +334,25 @@ func setValueInOvfEnv(key, val string, config *rpcvmx.Config) error {
 	var props []ovf.EnvProperty
 
 	// Find the property with the matching key name and update its value.
+	keyFound := false
 	for _, p := range ovfEnv.Property.Properties {
 		if strings.EqualFold(p.Key, key) {
 			props = append(props, ovf.EnvProperty{
 				Key:   p.Key,
 				Value: val,
 			})
+			keyFound = true
 		} else {
 			props = append(props, p)
 		}
+	}
+
+	// If the key was not found then add a new property with it and the value.
+	if !keyFound {
+		props = append(props, ovf.EnvProperty{
+			Key:   key,
+			Value: val,
+		})
 	}
 
 	ovfEnv.Property.Properties = props
