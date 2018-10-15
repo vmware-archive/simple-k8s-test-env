@@ -526,7 +526,9 @@ LOCK_PID=
 # Releases a distributed lock obtained from the etcd server. This function will
 # not work until the etcd server is online and etcdctl has been configured.
 release_lock() {
-  kill "${LOCK_PID}"; wait "${LOCK_PID}" || true; rm -f "${LOCK_FILE}"
+  kill "${LOCK_PID}" 2>/dev/null
+  wait "${LOCK_PID}" 2>/dev/null || true
+  rm -f "${LOCK_FILE}"
   debug "released lock ${LOCK_KEY}"
 }
 
