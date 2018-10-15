@@ -217,7 +217,9 @@ HOST_NAME=$(hostname -s) || fatal "failed to get host name"
 if [ "${HOST_FQDN}" = "${HOST_NAME}" ]; then
   host_fqdn="${HOST_NAME}.${NETWORK_DOMAIN:-localdomain}"
   info "setting hostname=${host_fqdn}"
-  hostname "${host_fqdn}"
+  hostname "${host_fqdn}" || fatal "failed to set hostname"
+  printf '\n127.0.0.1\t%s\n' "${host_fqdn}" >>/etc/hosts || \
+    fatal "failed to write hostname to /etc/hosts"
   HOST_FQDN=$(hostname -f) || fatal "failed to get host fqdn"
   [ "${HOST_FQDN}" = "${host_fqdn}" ] || \
     fatal "failed to set hostname: exp=${host_fqdn} act=${HOST_FQDN}"
@@ -1733,6 +1735,8 @@ EOF
 disable_resolved() {
   systemctl is-enabled systemd-resolved >/dev/null 2>&1 || return 0
   info "diabling systemd-resolved"
+  systemctl stop systemd-resolved >/dev/null 2>&1 || \
+    { error "failed to stop systemd-resolved"; return; }
   systemctl disable systemd-resolved >/dev/null 2>&1 || \
     { error "failed to disable systemd-resolved"; return; }
   systemctl mask systemd-resolved >/dev/null 2>&1 || \
