@@ -3983,7 +3983,8 @@ download_kubernetes_server() {
 }
 
 download_kubernetes_test() {
-  if i=$(find /var/lib/kubernetes/platforms -name 'e2e.test' -type f | wc -l) \
+  if i=$(find /var/lib/kubernetes/platforms -name 'e2e.test' -type f \
+    2>/dev/null | wc -l) \
     && [ "${i}" -gt "0" ]; then
     info "already downloaded kubernetes test"; return
   fi
