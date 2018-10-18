@@ -1,0 +1,273 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<Envelope xmlns="http://schemas.dmtf.org/ovf/envelope/1" xmlns:ovf="http://schemas.dmtf.org/ovf/envelope/1" xmlns:vmw="http://www.vmware.com/schema/ovf" xmlns:rasd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData" xmlns:vssd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_VirtualSystemSettingData">
+  <References>
+    <File ovf:id="file1" ovf:href="yakity-centos-1.vmdk"/>
+    <File ovf:id="file2" ovf:href="yakity-centos-2.nvram" ovf:size="8684"/>
+  </References>
+  <DiskSection>
+    <Info>List of the virtual disks</Info>
+    <Disk ovf:capacityAllocationUnits="byte" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized" ovf:diskId="vmdisk1" ovf:capacity="17179869184" ovf:fileRef="file1"/>
+  </DiskSection>
+  <NetworkSection>
+    <Info>The list of logical networks</Info>
+    <Network ovf:name="sddc-cgw-network-3">
+      <Description>The sddc-cgw-network-3 network</Description>
+    </Network>
+  </NetworkSection>
+  <vmw:StorageGroupSection ovf:required="false" vmw:id="group1" vmw:name="vSAN Default Storage Policy">
+    <Info>Storage policy for group of disks</Info>
+    <vmw:Description>The vSAN Default Storage Policy storage policy group</vmw:Description>
+  </vmw:StorageGroupSection>
+  <vmw:IpAssignmentSection vmw:schemes="dhcp ovfenv" vmw:protocols="IPv4">
+    <Info>Supported IP assignment schemes</Info>
+  </vmw:IpAssignmentSection>
+  <VirtualSystem ovf:id="yakity-centos">
+    <Info>A Virtual system</Info>
+    <Name>yakity-centos</Name>
+    <AnnotationSection>
+      <Info>A human-readable annotation</Info>
+      <Annotation>A turn-key OVF solution for deploying single or multi-node Kubernetes clusters.</Annotation>
+    </AnnotationSection>
+    <OperatingSystemSection ovf:id="107" ovf:version="7" vmw:osType="centos7_64Guest">
+      <Info>The operating system installed</Info>
+      <Description>CentOS 7 (64-bit)</Description>
+    </OperatingSystemSection>
+    <VirtualHardwareSection ovf:transport="com.vmware.guestInfo">
+      <Info>Virtual hardware requirements</Info>
+      <System>
+        <vssd:ElementName>Virtual Hardware Family</vssd:ElementName>
+        <vssd:InstanceID>0</vssd:InstanceID>
+        <vssd:VirtualSystemType>vmx-13</vssd:VirtualSystemType>
+      </System>
+      <Item>
+        <rasd:AllocationUnits>hertz * 10^6</rasd:AllocationUnits>
+        <rasd:Description>Number of Virtual CPUs</rasd:Description>
+        <rasd:ElementName>1 virtual CPU(s)</rasd:ElementName>
+        <rasd:InstanceID>1</rasd:InstanceID>
+        <rasd:ResourceType>3</rasd:ResourceType>
+        <rasd:VirtualQuantity>1</rasd:VirtualQuantity>
+        <vmw:CoresPerSocket ovf:required="false">1</vmw:CoresPerSocket>
+      </Item>
+      <Item>
+        <rasd:AllocationUnits>byte * 2^20</rasd:AllocationUnits>
+        <rasd:Description>Memory Size</rasd:Description>
+        <rasd:ElementName>2048MB of memory</rasd:ElementName>
+        <rasd:InstanceID>2</rasd:InstanceID>
+        <rasd:ResourceType>4</rasd:ResourceType>
+        <rasd:VirtualQuantity>2048</rasd:VirtualQuantity>
+      </Item>
+      <Item>
+        <rasd:Address>0</rasd:Address>
+        <rasd:Description>SCSI Controller</rasd:Description>
+        <rasd:ElementName>SCSI Controller 1</rasd:ElementName>
+        <rasd:InstanceID>3</rasd:InstanceID>
+        <rasd:ResourceSubType>VirtualSCSI</rasd:ResourceSubType>
+        <rasd:ResourceType>6</rasd:ResourceType>
+        <vmw:Config ovf:required="false" vmw:key="slotInfo.pciSlotNumber" vmw:value="160"/>
+      </Item>
+      <Item>
+        <rasd:Address>0</rasd:Address>
+        <rasd:Description>SATA Controller</rasd:Description>
+        <rasd:ElementName>SATA Controller 1</rasd:ElementName>
+        <rasd:InstanceID>4</rasd:InstanceID>
+        <rasd:ResourceSubType>vmware.sata.ahci</rasd:ResourceSubType>
+        <rasd:ResourceType>20</rasd:ResourceType>
+        <vmw:Config ovf:required="false" vmw:key="slotInfo.pciSlotNumber" vmw:value="33"/>
+      </Item>
+      <Item>
+        <rasd:AddressOnParent>0</rasd:AddressOnParent>
+        <rasd:ElementName>Hard Disk 1</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/vmdisk1</rasd:HostResource>
+        <rasd:InstanceID>5</rasd:InstanceID>
+        <rasd:Parent>3</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item>
+        <rasd:AddressOnParent>0</rasd:AddressOnParent>
+        <rasd:AutomaticAllocation>false</rasd:AutomaticAllocation>
+        <rasd:ElementName>CD/DVD Drive 1</rasd:ElementName>
+        <rasd:InstanceID>6</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceSubType>vmware.cdrom.remoteatapi</rasd:ResourceSubType>
+        <rasd:ResourceType>15</rasd:ResourceType>
+      </Item>
+      <Item>
+        <rasd:AddressOnParent>0</rasd:AddressOnParent>
+        <rasd:AutomaticAllocation>true</rasd:AutomaticAllocation>
+        <rasd:Connection>sddc-cgw-network-3</rasd:Connection>
+        <rasd:ElementName>Network adapter 1</rasd:ElementName>
+        <rasd:InstanceID>7</rasd:InstanceID>
+        <rasd:ResourceSubType>VmxNet3</rasd:ResourceSubType>
+        <rasd:ResourceType>10</rasd:ResourceType>
+        <vmw:Config ovf:required="false" vmw:key="connectable.allowGuestControl" vmw:value="true"/>
+        <vmw:Config ovf:required="false" vmw:key="slotInfo.pciSlotNumber" vmw:value="192"/>
+        <vmw:Config ovf:required="false" vmw:key="wakeOnLanEnabled" vmw:value="true"/>
+      </Item>
+      <Item ovf:required="false">
+        <rasd:ElementName>Video card</rasd:ElementName>
+        <rasd:InstanceID>8</rasd:InstanceID>
+        <rasd:ResourceType>24</rasd:ResourceType>
+        <vmw:Config ovf:required="false" vmw:key="numDisplays" vmw:value="1"/>
+        <vmw:Config ovf:required="false" vmw:key="enable3DSupport" vmw:value="false"/>
+        <vmw:Config ovf:required="false" vmw:key="graphicsMemorySizeInKB" vmw:value="262144"/>
+        <vmw:Config ovf:required="false" vmw:key="videoRamSizeInKB" vmw:value="8192"/>
+        <vmw:Config ovf:required="false" vmw:key="useAutoDetect" vmw:value="false"/>
+        <vmw:Config ovf:required="false" vmw:key="use3dRenderer" vmw:value="automatic"/>
+      </Item>
+      <vmw:Config ovf:required="false" vmw:key="flags.vbsEnabled" vmw:value="false"/>
+      <vmw:Config ovf:required="false" vmw:key="cpuHotAddEnabled" vmw:value="false"/>
+      <vmw:Config ovf:required="false" vmw:key="nestedHVEnabled" vmw:value="false"/>
+      <vmw:Config ovf:required="false" vmw:key="virtualSMCPresent" vmw:value="false"/>
+      <vmw:Config ovf:required="false" vmw:key="flags.vvtdEnabled" vmw:value="false"/>
+      <vmw:Config ovf:required="false" vmw:key="cpuHotRemoveEnabled" vmw:value="false"/>
+      <vmw:Config ovf:required="false" vmw:key="memoryHotAddEnabled" vmw:value="false"/>
+      <vmw:Config ovf:required="false" vmw:key="bootOptions.efiSecureBootEnabled" vmw:value="false"/>
+      <vmw:Config ovf:required="false" vmw:key="firmware" vmw:value="bios"/>
+      <vmw:Config ovf:required="false" vmw:key="virtualICH7MPresent" vmw:value="false"/>
+      <vmw:ExtraConfig ovf:required="false" vmw:key="nvram" vmw:value="ovf:/file/file2"/>
+    </VirtualHardwareSection>
+    <vmw:StorageSection ovf:required="false" vmw:group="group1">
+      <Info>Storage policy group reference</Info>
+    </vmw:StorageSection>
+    <ProductSection>
+      <Info>Information about the installed software</Info>
+      <Product>yakity</Product>
+      <Vendor>VMware Inc.</Vendor>
+      <ProductUrl>https://github.com/akutz/yakity</ProductUrl>
+      <VendorUrl>https://vmware.com</VendorUrl>
+      <Category>Guest OS</Category>
+      <Property ovf:qualifiers="MinLen(3)" ovf:userConfigurable="true" ovf:value="yakity.localdomain" ovf:type="string" ovf:key="HOST_FQDN">
+        <Label>Host FQDN</Label>
+        <Description>The host's fully qualified domain name (FQDN). For example, photon-machine.localdomain.</Description>
+      </Property>
+      <Property ovf:qualifiers="MinLen(1)" ovf:userConfigurable="true" ovf:value="ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDE0c5FczvcGSh/tG4iw+Fhfi/O5/EvUM/96js65tly4++YTXK1d9jcznPS5ruDlbIZ30oveCBd3kT8LLVFwzh6hepYTf0YmCTpF4eDunyqmpCXDvVscQYRXyasEm5olGmVe05RrCJSeSShAeptv4ueIn40kZKOghinGWLDSZG4+FFfgrmcMCpx5YSCtX2gvnEYZJr0czt4rxOZuuP7PkJKgC/mt2PcPjooeX00vAj81jjU2f3XKrjjz2u2+KIt9eba+vOQ6HiC8c2IzRkUAJ5i1atLy8RIbejo23+0P4N2jjk17QySFOVHwPBDTYb0/0M/4ideeU74EN/CgVsvO6JrLsPBR4dojkV5qNbMNxIVv5cUwIy2ThlLgqpNCeFIDLCWNZEFKlEuNeSQ2mPtIO7ETxEL2Cz5y/7AIuildzYMc6wi2bofRC8HmQ7rMXRWdwLKWsR0L7SKjHblIwarxOGqLnUI+k2E71YoP7SZSlxaKi17pqkr0OMCF+kKqvcvHAQuwGqyumTEWOlH6TCx1dSPrW+pVCZSHSJtSTfDW2uzL6y8k10MT06+pVunSrWo5LHAXcS91htHV1M1UrH/tZKSpjYtjMb5+RonfhaFRNzvj7cCE1f3Kp8UVqAdcGBTtReoE8eRUT63qIxjw03a7VwAyB2w+9cu1R9/vAo8SBeRqw== sakutz@gmail.com" ovf:type="string" ovf:key="SSH_PUB_KEY">
+        <Label>SSH Public Keys</Label>
+        <Description>An SSH public key to add to the root user's ".ssh/authorized_keys" file.</Description>
+      </Property>
+      <Category>Kubernetes</Category>
+      <Property ovf:userConfigurable="true" ovf:value="release/stable" ovf:type="string" ovf:key="K8S_VERSION">
+        <Label>Kubernetes Version</Label>
+        <Description>The Kubernetes version to install. Please see https://github.com/akutz/yakity/wiki/Kubernetes-version for valid version strings.</Description>
+      </Property>
+      <Property ovf:qualifiers="ValueMap{&quot;Controller&quot;, &quot;Worker&quot;, &quot;Both&quot;}" ovf:userConfigurable="true" ovf:value="Both" ovf:type="string" ovf:key="NODE_TYPE">
+        <Label>Node Type</Label>
+        <Description>The host can either be a member of the control plane, a worker node, or control plane member that can also schedule workloads.</Description>
+      </Property>
+      <Property ovf:qualifiers="MinValue(1) MaxValue(5000)" ovf:userConfigurable="true" ovf:value="1" ovf:type="uint16" ovf:key="NUM_CONTROLLERS">
+        <Label>Number of Control Plane Nodes</Label>
+        <Description>The number of control plane nodes in the Kubernetes cluster. This number should be the same value as the "size" query parameter given to the etcd discovery service that returns the etcd discovery URL.
+
+This value will be ignored if no etcd discovery URL is specified.</Description>
+      </Property>
+      <Property ovf:qualifiers="MinValue(1) MaxValue(5000)" ovf:userConfigurable="true" ovf:value="1" ovf:type="uint16" ovf:key="NUM_NODES">
+        <Label>Number of Nodes</Label>
+        <Description>The total number of nodes in the Kubernetes cluster. This includes control plane nodes as well as worker nodes.
+
+This value will be ignored if no etcd discovery URL is specified.</Description>
+      </Property>
+      <Property ovf:userConfigurable="true" ovf:type="string" ovf:key="ETCD_DISCOVERY">
+        <Label>etcd Discovery URL</Label>
+        <Description>This value is required and must be set to the same value on all OVFs deployed to the same cluster. The value is the URL returned from https://discovery.etcd.io/new?size=NUM_NODES. 
+
+Please see https://coreos.com/os/docs/latest/cluster-discovery.html for more information.</Description>
+      </Property>
+      <Property ovf:qualifiers="MinLen(1)" ovf:userConfigurable="true" ovf:value="-----BEGIN CERTIFICATE-----MIID3TCCAsWgAwIBAgIJANsDH22NZ8IzMA0GCSqGSIb3DQEBBQUAMIGKMQswCQYDVQQGEwJVUzETMBEGA1UECAwKQ2FsaWZvcm5pYTESMBAGA1UEBwwJUGFsbyBBbHRvMQ8wDQYDVQQKDAZWTXdhcmUxDDAKBgNVBAsMA0NOWDEUMBIGA1UEAwwLQ05YIENJQ0QgQ0ExHTAbBgkqhkiG9w0BCQEWDmNueEB2bXdhcmUuY29tMCAXDTE4MTAxNTIyNTYxOFoYDzIxMTgwOTIxMjI1NjE4WjCBijELMAkGA1UEBhMCVVMxEzARBgNVBAgMCkNhbGlmb3JuaWExEjAQBgNVBAcMCVBhbG8gQWx0bzEPMA0GA1UECgwGVk13YXJlMQwwCgYDVQQLDANDTlgxFDASBgNVBAMMC0NOWCBDSUNEIENBMR0wGwYJKoZIhvcNAQkBFg5jbnhAdm13YXJlLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALaDsZAy/Fch9kMkYQebVhwriEN7guIzM5KvMtcdsORWVZos9FjzvSSjYFt/Inpx7m00E0KYr5CgMNfL1wnizJSoYZyWbMIUguXE2cJEP1DDka635GthFjYQ7Xm1AjEaJQdKeZJ0tIVWpOZncuxrVUSJgUcx6Cv9nj7IJsPlT7Ibn/WLa2Xxa2mM6LwXLAQyAbFaGgZ1NKZIrSlNnLYGJeP5gW10qYAqxI7WakeRULKKlFn2NPEtQlgFMb/Vls+qWQGoWOtiO0a5LgBXkRqe6U0Kc6fmWTrlb8r0D9sWj45GHjb3xPtmYL5c/JoM+Qs8bgirT/VyfB6qMN7vkDKeaNkCAwEAAaNCMEAwDwYDVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMCAYYwHQYDVR0OBBYEFOImIlsiEFumSEW6u32Rlwn0at6CMA0GCSqGSIb3DQEBBQUAA4IBAQB+DooX+dV6vVCRfezyfME7J6uevFQ1Zne/Oy5JfQ/dUx8rHM+Xdz5lbrOUUgZ9U67a/elehxJBny3WUUTf5rWRRGsCEHBkrZblfmDrz8q7C2/5IYchjjcoqyyNfrjucGVE+s3YjwHOTMf7PaAKOmi2BtqctwxqGH0kv/b6MbIgyKy9SYGteAIwrF7d0CenGN8CVzVvLb7j+PznJPvK/+SYvDDiRfwpwvkH8STCzfqqi1R/ewBG7d9z9IdfVMaOKt/+d4KXPYVm/ttgLgyYGbNNm6h9ZAMXcrYhOWxP372pJZCC3caSOfDIAcwiVpqGyVW44enD/MsGBEURuGEV1wwH-----END CERTIFICATE----------BEGIN RSA PRIVATE KEY-----MIIEpQIBAAKCAQEAtoOxkDL8VyH2QyRhB5tWHCuIQ3uC4jMzkq8y1x2w5FZVmiz0WPO9JKNgW38ienHubTQTQpivkKAw18vXCeLMlKhhnJZswhSC5cTZwkQ/UMORrrfka2EWNhDtebUCMRolB0p5knS0hVak5mdy7GtVRImBRzHoK/2ePsgmw+VPshuf9YtrZfFraYzovBcsBDIBsVoaBnU0pkitKU2ctgYl4/mBbXSpgCrEjtZqR5FQsoqUWfY08S1CWAUxv9WWz6pZAahY62I7RrkuAFeRGp7pTQpzp+ZZOuVvyvQP2xaPjkYeNvfE+2Zgvlz8mgz5CzxuCKtP9XJ8Hqow3u+QMp5o2QIDAQABAoIBAQCey53l1DZwqP/WEwTI1YHqKIX6ELAjlmC8suoM96w8PlFkPtCpxAdApVTkxox89Dt5j+FiA+5casOUPanu1AEjJg0nbElb4vSwbMD5oN9lqYJK/XwjYOkuSTQUvEQX7KNi4I09u4SEronyXPdEc25Qn0J3axiRjavs+7+emRjp4F6huVn8fQZW5/hhXg5b7ehvZKdNX94PaDajWA59u6YisilbyDzx0hCCRa6TjC/6MRAURGGThlMcKZDG5gT2TNZofDI1UFhrFFiArX8YOZBwxi7qse5+++04eBDbKGUs0iLXtlIQAGFOsAqpw3/TLm4qFWyZoOG8REK7UXBnO3zBAoGBAOHGlxTTZFOH/DzzB4qviALa8p1M8xFrR3uL23oDE5mQFMgljm6SvmDRkn8nmqbFbSB4i6B9HryEF9/eyrqYa/SLcezaMnbpwWQJgGv3oCFgALovJQZVhL+zpZZDKsTRC2d7VpXUfUkE4EmHh9blw8Qo/8cT/ssY7SavWifiOEI9AoGBAM7yhhdwj1fnZCw8wegUJ8/VgF2hEgZI0pT//ZgIVL8WD4TVPpC5dKPeNaM2iwWhUzXmPsCq+X/WIgYucw6ENMyiPEO5rkcWIr9vlctxlEP0n2kxWRGYKalongsrX6Q2ZjFvkdbtyooJCaaMDeGOH76T4vX7xch9Od/lLiooArbNAoGBAL4vcXkDkVGkDWCyQDodHu94zEKhXWfg/Lgf2ePvz4TeEAOBT3fpeSFJqKQgEnBFgmWF5ehtPYUDqLDWleOVHetDw9YG/9eXlWbVci6Ay40Rt8seh4vMYiSyCdyH+/ELPxYOmaNg+aCW0PBfkJf/uGb3Om7ScyFWf/7EW6eZMlbpAoGAUzWCowQYLsEULxFS6izIgTGYRo1QAQTg3xY68hlPcfG91awkVu6qroTXTkPNDDt8iKyGSNO2NCd2UMP2cTzJOgp1bsnHAEAvQofsU/vcIKLIQfScmo1zGvG8skMDVrSkzHXOzvuXt37AyZ2Aq1OJAgjWdg+AzAdF8PdmY37o8HUCgYEAxVH1KCshoCZ9VEKlNtc2LPLFHEzbgt9ABpT8PBs1D65hH73v6/ZwbEp/x9KCTlP6GZ7bec/rGq/b7o1jbn7LVgcTQJ2fkYLqUoeu0yOfAo6XfjvVVhtnkCt/lMrx//WIxMFUcQOSoLpprm+MAOQAFZi5JkpX/x9gez0a02fLaZQ=-----END RSA PRIVATE KEY-----" ovf:type="string" ovf:key="TLS_CA_PEM">
+        <Label>x509 CA Certificate/Key Pair</Label>
+        <Description>A PEM-encoded x509 CA certificate and its corresponding PEM-encoded RSA private key.
+
+This CA is used to sign the certificates generated for the Kubernetes cluster.</Description>
+      </Property>
+      <Property ovf:userConfigurable="true" ovf:value="False" ovf:type="boolean" ovf:key="INSTALL_CONFORMANCE_TESTS">
+        <Label>Install Kubernetes e2e Conformance Tests</Label>
+        <Description>A flag that indicates whether to install the Kubernetes e2e conformance test package onto the host. This is useful for nodes that may wish to schedule the test workloads.</Description>
+      </Property>
+      <Category>Cloud Provider</Category>
+      <Property ovf:userConfigurable="true" ovf:value="vcenter.sddc-54-70-161-229.vmc.vmware.com" ovf:type="string" ovf:key="VSPHERE_SERVER">
+        <Label>vSphere Server</Label>
+        <Description>The IP address or FQDN of the vSphere host that manages the VM.</Description>
+      </Property>
+      <Property ovf:qualifiers="MinValue(1) MaxValue(65535)" ovf:userConfigurable="true" ovf:value="443" ovf:type="uint16" ovf:key="VSPHERE_SERVER_PORT">
+        <Label>vSphere Server Port</Label>
+        <Description>The port on which the vSphere server is listening for incoming connections.</Description>
+      </Property>
+      <Property ovf:userConfigurable="true" ovf:value="" ovf:type="string" ovf:key="VSPHERE_USER">
+        <Label>vSphere Username</Label>
+        <Description>The vSphere account to use with the vSphere cloud provider for Kubernetes.</Description>
+      </Property>
+      <Property ovf:userConfigurable="true" ovf:password="true" ovf:value="" ovf:type="string" ovf:key="VSPHERE_PASSWORD">
+        <Label>vSphere Password</Label>
+        <Description>The vSphere account to use with the vSphere cloud provider for Kubernetes.</Description>
+      </Property>
+      <Property ovf:userConfigurable="true" ovf:value="False" ovf:type="boolean" ovf:key="VSPHERE_SERVER_INSECURE">
+        <Label>vSphere TLS Insecure</Label>
+        <Description>A flag that indicates whether or not the cloud provider will connect to a vSphere server over TLS if the peer certificate cannot be validated.</Description>
+      </Property>
+      <Property ovf:userConfigurable="true" ovf:value="True" ovf:type="boolean" ovf:key="CLOUD_PROVIDER_EXTERNAL">
+        <Label>External</Label>
+        <Description>A flag that indicates whether or not to use the external cloud provider.</Description>
+      </Property>
+      <Property ovf:userConfigurable="true" ovf:value="gcr.io/cloud-provider-vsphere/vsphere-cloud-controller-manager:latest" ovf:type="string" ovf:key="CLOUD_PROVIDER_IMAGE">
+        <Label>Cloud Provider Image</Label>
+        <Description>The image to use when an external cloud provider has been selected.</Description>
+      </Property>
+      <Property ovf:userConfigurable="true" ovf:value="SDDC-Datacenter" ovf:type="string" ovf:key="VSPHERE_DATACENTER">
+        <Label>vSphere Datacenter</Label>
+        <Description>The datacenter where VMs are created.</Description>
+      </Property>
+      <Property ovf:userConfigurable="true" ovf:value="Compute-ResourcePool" ovf:type="string" ovf:key="VSPHERE_RESOURCE_POOL">
+        <Label>vSphere Resource Pool</Label>
+        <Description>The resource pool where VMs are created.</Description>
+      </Property>
+      <Property ovf:userConfigurable="true" ovf:value="Workloads" ovf:type="string" ovf:key="VSPHERE_FOLDER">
+        <Label>vSphere Folder</Label>
+        <Description>The folder where VMs are created.</Description>
+      </Property>
+      <Property ovf:userConfigurable="true" ovf:value="WorkloadDatastore" ovf:type="string" ovf:key="VSPHERE_DATASTORE">
+        <Label>vSphere Datastore</Label>
+        <Description>The datastore where VMs are created.</Description>
+      </Property>
+      <Property ovf:value="sddc-cgw-network-3" ovf:type="string" ovf:key="VSPHERE_NETWORK">
+        <Label>vSphere Network</Label>
+        <Description>The name of the vSphere network to which the VM is connected.</Description>
+      </Property>
+      <Category>Logging</Category>
+      <Property ovf:qualifiers="MinValue(1) MaxValue(10)" ovf:userConfigurable="true" ovf:value="2" ovf:type="uint8" ovf:key="LOG_LEVEL_KUBERNETES">
+        <Label>Kubernetes</Label>
+        <Description>The default Kubernetes log level.</Description>
+      </Property>
+      <Property ovf:qualifiers="MinValue(1) MaxValue(10)" ovf:userConfigurable="true" ovf:value="2" ovf:type="uint8" ovf:key="LOG_LEVEL_KUBE_APISERVER">
+        <Label>Kubernetes API Server</Label>
+        <Description>The log level for the Kubernetes API server.</Description>
+      </Property>
+      <Property ovf:qualifiers="MinValue(1) MaxValue(10)" ovf:userConfigurable="true" ovf:value="2" ovf:type="uint8" ovf:key="LOG_LEVEL_KUBE_CONTROLLER_MANAGER">
+        <Label>Kubernetes Controller Manager</Label>
+        <Description>The log level for the Kubernetes controller manager.</Description>
+      </Property>
+      <Property ovf:qualifiers="MinValue(1) MaxValue(10)" ovf:userConfigurable="true" ovf:value="2" ovf:type="uint8" ovf:key="LOG_LEVEL_KUBE_SCHEDULER">
+        <Label>Kubernetes Scheduler</Label>
+        <Description>The log level for the Kubernetes scheduler.</Description>
+      </Property>
+      <Property ovf:qualifiers="MinValue(1) MaxValue(10)" ovf:userConfigurable="true" ovf:value="2" ovf:type="uint8" ovf:key="LOG_LEVEL_KUBELET">
+        <Label>Kubelet</Label>
+        <Description>The log level for the kubelet.</Description>
+      </Property>
+      <Property ovf:qualifiers="MinValue(1) MaxValue(10)" ovf:userConfigurable="true" ovf:value="2" ovf:type="uint8" ovf:key="LOG_LEVEL_KUBE_PROXY">
+        <Label>Kube-Proxy</Label>
+        <Description>The log level for the kube-proxy service.</Description>
+      </Property>
+      <Property ovf:qualifiers="MinValue(1) MaxValue(10)" ovf:userConfigurable="true" ovf:value="2" ovf:type="uint8" ovf:key="LOG_LEVEL_CLOUD_CONTROLLER_MANAGER">
+        <Label>Cloud Controller Manager</Label>
+        <Description>The log level for the cloud controller manager (CCM). This only applies to out-of-tree CCMs.</Description>
+      </Property>
+      <Category>Yakity</Category>
+      <Property ovf:userConfigurable="true" ovf:type="string" ovf:key="YAKITY_GUESTINFO_URL">
+        <Label>Yakity GuestInfo URL</Label>
+        <Description>The URL of the Yakity GuestInfo script to use. This may be set to override the Yakity GuestInfo script built into the OVF.</Description>
+      </Property>
+      <Property ovf:userConfigurable="true" ovf:type="string" ovf:key="YAKITY_URL">
+        <Label>Yakity URL</Label>
+        <Description>The URL of the Yakity script to use. This may be set to override the Yakity script built into the OVF.</Description>
+      </Property>
+    </ProductSection>
+  </VirtualSystem>
+</Envelope>

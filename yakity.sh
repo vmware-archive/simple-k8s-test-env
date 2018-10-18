@@ -207,6 +207,76 @@ info "  NUM_NODES       = ${NUM_NODES}"
 ################################################################################
 ##                               Networking                                   ##
 ################################################################################
+get_host_name_from_fqdn() {
+  echo "${1}" | awk -F. '{print $1}'
+}
+
+get_domain_name_from_fqdn() {
+  echo "${1}" | sed 's~^'"$(get_host_name_from_fqdn "${1}")"'\.\(.\{1,\}\)$~\1~'
+}
+
+# Sets the host name and updats all of the files necessary to have the
+# hostname command respond with correct information for "hostname -f",
+# "hostname -s", and "hostname -d".
+#
+# Possible return codes include:
+#   0 - success
+#
+#   50 - after setting the host name the command "hostname -f" returns
+#        an empty string
+#   51 - after setting the host name the command "hostname -f" returns
+#        a value that does not match the host FQDN that was set
+#
+#   52 - after setting the host name the command "hostname -s" returns
+#        an empty string
+#   53 - after setting the host name the command "hostname -s" returns
+#        a value that does not match the host name that was set
+#
+#   54 - after setting the host name the command "hostname -d" returns
+#        an empty string
+#   55 - after setting the host name the command "hostname -d" returns
+#        a value that does not match the domain name that was set
+#
+#    ? - any other non-zero exit code indicates failure and comes directly
+#        from the "hostname" command. Please see the "hostname" command
+#        for a list of its exit codes.
+set_host_name() {
+  _host_fqdn="${1}"; _host_name="${2}"; _domain_name="${3}"
+
+  # Use the "hostname" command instead of "hostnamectl set-hostname" since
+  # the latter relies on the systemd-hostnamed service, which may not be
+  # present or active.
+  hostname "${_host_fqdn}" || return "${?}"
+
+  # Update the hostname file.
+  echo "${_host_fqdn}" >/etc/hostname
+
+  # Update the hosts file so the "hostname" command will respond with
+  # the correct values for "hostname -f", "hostname -s", and "hostname -d".
+  cat <<EOF >/etc/hosts
+::1         ipv6-localhost ipv6-loopback
+127.0.0.1   localhost
+127.0.0.1   localhost.${_domain_name}
+127.0.0.1   ${_host_name}
+127.0.0.1   ${_host_fqdn}
+EOF
+
+  _act_host_fqdn="$(hostname -f)" || return "${?}"
+  [ -n "${_act_host_fqdn}" ] || return 50
+  [ "${_host_fqdn}" = "${_act_host_fqdn}" ] || return 51
+
+  _act_host_name="$(hostname -s)" || return "${?}"
+  [ -n "${_act_host_name}" ] || return 52
+  [ "${_host_name}" = "${_act_host_name}" ] || return 53
+
+  _act_domain_name="$(hostname -d)" || return "${?}"
+  [ -n "${_act_domain_name}" ] || return 54
+  [ "${_domain_name}" = "${_act_domain_name}" ] || return 55
+
+  # success!
+  return 0
+}
+
 HOST_FQDN=$(hostname -f) || fatal "failed to get host fqdn"
 HOST_NAME=$(hostname -s) || fatal "failed to get host name"
 
@@ -216,13 +286,38 @@ HOST_NAME=$(hostname -s) || fatal "failed to get host name"
 # FQDN by appending ".localdomain" to the host's name.
 if [ "${HOST_FQDN}" = "${HOST_NAME}" ]; then
   host_fqdn="${HOST_NAME}.${NETWORK_DOMAIN:-localdomain}"
-  info "setting hostname=${host_fqdn}"
-  hostname "${host_fqdn}" || fatal "failed to set hostname"
-  printf '\n127.0.0.1\t%s\n' "${host_fqdn}" >>/etc/hosts || \
-    fatal "failed to write hostname to /etc/hosts"
+  host_name="$(get_host_name_from_fqdn "${host_fqdn}")"
+  domain_name="$(get_domain_name_from_fqdn "${host_fqdn}")"
+  if ! set_host_name "${host_fqdn}" "${host_name}" "${domain_name}"; then
+    case "${?}" in
+    50)
+      fatal "hostname -f returned empty string" 50
+      ;;
+    51)
+      _act_host_fqdn="$(hostname -f)" || true
+      fatal "exp_host_fqdn=${host_fqdn} act_host_fqdn=${_act_host_fqdn}" 51
+      ;;
+    52)
+      fatal "hostname -s returned empty string" 52
+      ;;
+    53)
+      _act_host_name="$(hostname -s)" || true
+      fatal "exp_host_name=${host_name} act_host_name=${_act_host_name}" 53
+      ;;
+    54)
+      fatal "hostname -d returned empty string" 54
+      ;;
+    55)
+      _act_domain_name="$(hostname -d)" || true
+      fatal "exp_domain_name=${domain_name} act_domain_name=${_act_domain_name}" 55
+      ;;
+    *)
+      fatal "set_host_name failed" "${?}"
+      ;;
+    esac
+  fi
   HOST_FQDN=$(hostname -f) || fatal "failed to get host fqdn"
-  [ "${HOST_FQDN}" = "${host_fqdn}" ] || \
-    fatal "failed to set hostname: exp=${host_fqdn} act=${HOST_FQDN}"
+  HOST_NAME=$(hostname -s) || fatal "failed to get host name"
 fi
 
 IPV4_ADDRESS=$(ip route get 1 | awk '{print $NF;exit}') || \
@@ -4084,8 +4179,13 @@ install_packages() {
     debug "tdnf install lsof bindutils iputils tar"
     tdnf -y install lsof bindutils iputils tar || true
     if [ ! "${NODE_TYPE}" = "controller" ]; then
-      debug "tdnf install socat ipset"
-      tdnf -y install socat ipset || true
+      debug "tdnf install socat ipset libnetfilter_conntrack libnetfilter_cthelper libnetfilter_cttimeout libnetfilter_queue"
+      tdnf -y install socat ipset \
+        libnetfilter_conntrack libnetfilter_cthelper \
+        libnetfilter_cttimeout libnetfilter_queue || true
+      debug "rpm -ivh conntrack-tools"
+      rpm -ivh https://dl.bintray.com/vmware/photon_updates_2.0_x86_64/x86_64/conntrack-tools-1.4.5-1.ph2.x86_64.rpm || \
+        { error "failed to install conntrack-tools"; return; }
     fi
     debug "installed packages via tdnf"
   # RedHat/CentOS

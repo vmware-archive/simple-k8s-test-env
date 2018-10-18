@@ -8,24 +8,178 @@
 # file by reading properties from the VMware GuestInfo interface.
 #
 
+set -e
+set -o pipefail
+
 # Update the path so that "rpctool" is in it.
 PATH=/var/lib/yakity:"${PATH}"
 
+# echo2 echoes the provided arguments to file descriptor 2, stderr.
+echo2() { echo "${@}" 1>&2; }
+
+# fatal echoes a string to stderr and then exits the program.
+fatal() { exit_code="${2:-${?}}"; echo2 "${1}"; exit "${exit_code}"; }
+
 if ! command -v rpctool >/dev/null 2>&1; then
-  exit_code="${?}"
-  echo "failed to find rpctool command" 1>&2
-  exit "${exit_code}"
+  fatal "failed to find rpctool command"
 fi
 
 YAK_DEFAULTS="${YAK_DEFAULTS:-/etc/default/yakity}"
 
-write_config_val() {
-  if val=$(rpctool get "yakity.${1}" 2>/dev/null) && [ -n "${val}" ]; then
-    printf '%s="%s"\n' "${1}" "${val}" >>"${YAK_DEFAULTS}"
-  elif val=$(rpctool get.ovf "${1}" 2>/dev/null) && [ -n "${val}" ]; then
-    printf '%s="%s"\n' "${1}" "${val}" >>"${YAK_DEFAULTS}"
+get_config_val() {
+  if val="$(rpctool get "yakity.${1}" 2>/dev/null)" && [ -n "${val}" ]; then
+    echo2 "got config val: key=${1} source=guestinfo.yakity"
+    echo "${val}"
+  elif val="$(rpctool get.ovf "${1}" 2>/dev/null)" && [ -n "${val}" ]; then
+    echo2 "got config val: key=${1} source=guestinfo.ovfEnv"
+    echo "${val}"
   fi
 }
+
+write_config_val() {
+  if [ -n "${2}" ]; then
+    printf '%s="%s"\n' "${1}" "${2}" >>"${YAK_DEFAULTS}"
+  elif val="$(get_config_val "${1}")" && [ -n "${val}" ]; then
+    printf '%s="%s"\n' "${1}" "${val}" >>"${YAK_DEFAULTS}"
+  fi
+  echo2 "wrote config val: key=${1}"
+}
+
+# Get the PEM-encoded CA.
+if val="$(get_config_val TLS_CA_PEM)" && [ -n "${val}" ]; then
+  pem="$(mktemp)"
+  echo "${val}" | \
+    sed -r 's/(-{5}BEGIN [A-Z ]+-{5})/&\n/g; s/(-{5}END [A-Z ]+-{5})/\n&\n/g' | \
+    sed -r 's/.{64}/&\n/g; /^\s*$/d' | \
+    sed -r '/^$/d' >"${pem}"
+  ca_crt_gz="$(openssl x509 2>/dev/null <"${pem}" | gzip -9c | base64 -w0)"
+  write_config_val TLS_CA_CRT_GZ "${ca_crt_gz}"
+  ca_key_gz="$(openssl rsa 2>/dev/null <"${pem}" | gzip -9c | base64 -w0)"
+  write_config_val TLS_CA_KEY_GZ "${ca_key_gz}"
+  rm -f "${pem}"
+fi
+
+# Check to see if there is an SSH public key to add to the root user.
+if val="$(get_config_val SSH_PUB_KEY)" && [ -n "${val}" ]; then
+  mkdir -p /root/.ssh; chmod 0700 /root/.ssh
+  echo >>/root/.ssh/authorized_keys; chmod 0400 /root/.ssh/authorized_keys
+  echo "${val}" >>/root/.ssh/authorized_keys
+  echo2 "updated /root/.ssh/authorized_keys"
+fi
+
+# Check to see if the information necessary to create a cloud provider
+# configuration has been specified.
+vsphere_server="$(get_config_val VSPHERE_SERVER)"
+vsphere_server_port="$(get_config_val VSPHERE_SERVER_PORT)"
+vsphere_server_insecure="$(get_config_val VSPHERE_SERVER_INSECURE)"
+vsphere_network="$(get_config_val VSPHERE_NETWORK)"
+vsphere_username="$(get_config_val VSPHERE_USER)"
+vsphere_password="$(get_config_val VSPHERE_PASSWORD)"
+vsphere_datacenter="$(get_config_val VSPHERE_DATACENTER)"
+vsphere_datastore="$(get_config_val VSPHERE_DATASTORE)"
+vsphere_folder="$(get_config_val VSPHERE_FOLDER)"
+vsphere_resource_pool="$(get_config_val VSPHERE_RESOURCE_POOL)"
+cloud_provider_image="$(get_config_val CLOUD_PROVIDER_IMAGE)"
+cloud_provider_external="$(get_config_val CLOUD_PROVIDER_EXTERNAL)"
+
+if [ -n "${vsphere_server}" ] && [ -n "${vsphere_server_port}" ] && \
+   [ -n "${vsphere_server_insecure}" ] && [ -n "${vsphere_network}" ] && \
+   [ -n "${vsphere_username}" ] && [ -n "${vsphere_password}" ] && \
+   [ -n "${vsphere_datacenter}" ] && [ -n "${vsphere_datastore}" ] && \
+   [ -n "${vsphere_folder}" ] && [ -n "${vsphere_resource_pool}" ] && \
+   [ -n "${cloud_provider_image}" ] && [ -n "${cloud_provider_external}" ]; then
+
+  cloud_conf=/tmp/cloud.config.toml
+
+  # Update the insecure flag based on the expected value.
+  echo "${vsphere_server_insecure}" | grep -iq 'false' && \
+    vsphere_server_insecure=0 || vsphere_server_insecure=1
+
+  if echo "${cloud_provider_external}" | grep -iq 'false'; then
+    echo2 "selected in-tree vSphere cloud provider"
+
+    cloud_provider=vsphere
+
+    cat <<EOF >"${cloud_conf}"
+[Global]
+  user               = "${vsphere_username}"
+  password           = "${vsphere_password}"
+  port               = "${vsphere_server_port}"
+  insecure-flag      = "${vsphere_server_insecure}"
+  datacenters        = "${vsphere_datacenter}"
+
+[VirtualCenter "${vsphere_server}"]
+
+[Workspace]
+  server             = "${vsphere_server}"
+  datacenter         = "${vsphere_datacenter}"
+  folder             = "${vsphere_folder}"
+  default-datastore  = "${vsphere_datastore}"
+  resourcepool-path  = "${vsphere_resource_pool}"
+
+[Disk]
+  scsicontrollertype = pvscsi
+
+[Network]
+  public-network     = "${vsphere_network}"
+EOF
+
+  else
+    echo2 "selected out-of-tree vSphere cloud provider"
+    echo2 "  image = ${cloud_provider_image}"
+
+    cloud_provider=external
+
+    cat <<EOF >"${cloud_conf}"
+[Global]
+  secret-name        = "cloud-provider-vsphere-credentials"
+  secret-namespace   = "kube-system"
+  service-account    = "cloud-controller-manager"
+  port               = "${vsphere_server_port}"
+  insecure-flag      = "${vsphere_server_insecure}"
+  datacenters        = "${vsphere_datacenter}"
+
+[VirtualCenter "${vsphere_server}"]
+
+[Network]
+  public-network     = "${vsphere_network}"
+EOF
+
+    secrets_conf=/tmp/cloud-secrets.config.yaml
+
+    cat <<EOF >"${secrets_conf}"
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloud-provider-vsphere-credentials
+  namespace: kube-system
+data:
+  ${vsphere_server}.username: "$(printf '%s' "${vsphere_username}" | base64 -w0)"
+  ${vsphere_server}.password: "$(printf '%s' "${vsphere_password}" | base64 -w0)"
+EOF
+
+    { printf '%s="%s"\n' \
+        "CLOUD_PROVIDER_EXTERNAL" \
+        "vsphere"; \
+      printf '%s="%s"\n' \
+        "CLOUD_PROVIDER_IMAGE" \
+          "${cloud_provider_image}"; \
+      printf '%s="%s"\n' \
+        "MANIFEST_YAML_AFTER_RBAC_2" \
+        "$(gzip -9c <"${secrets_conf}" | base64 -w0)"; } >>"${YAK_DEFAULTS}"
+
+    rm -f "${secrets_conf}"
+  fi
+
+  { printf '%s="%s"\n' \
+      "CLOUD_PROVIDER" \
+      "${cloud_provider}"; \
+    printf '%s="%s"\n' \
+      "CLOUD_CONFIG" \
+      "$(gzip -9c <"${cloud_conf}" | base64 -w0)"; } >>"${YAK_DEFAULTS}"
+
+  rm -f "${cloud_conf}"
+fi
 
 write_config_val NODE_TYPE
 write_config_val ETCD_DISCOVERY
@@ -60,7 +214,6 @@ write_config_val RUN_CONFORMANCE_TESTS
 
 write_config_val MANIFEST_YAML_BEFORE_RBAC
 write_config_val MANIFEST_YAML_AFTER_RBAC_1
-write_config_val MANIFEST_YAML_AFTER_RBAC_2
 write_config_val MANIFEST_YAML_AFTER_ALL
 
 write_config_val ENCRYPTION_KEY
@@ -78,10 +231,6 @@ write_config_val SERVICE_DNS_PROVIDER
 write_config_val SERVICE_DNS_IPV4_ADDRESS
 write_config_val SERVICE_DOMAIN
 write_config_val SERVICE_NAME
-write_config_val CLOUD_PROVIDER
-write_config_val CLOUD_CONFIG
-write_config_val CLOUD_PROVIDER_EXTERNAL
-write_config_val CLOUD_PROVIDER_IMAGE
 write_config_val CLOUD_PROVIDER_IMAGE_SECRETS
 
 write_config_val K8S_VERSION
@@ -118,43 +267,5 @@ write_config_val TLS_CRT_UID
 write_config_val TLS_CRT_GID
 write_config_val TLS_CRT_PERM
 
-is_file_empty() {
-  bytes=$(du "${1}" | awk '{print $1}')
-  [ "${bytes}" -le "0" ]
-}
-
-# Check for the TLS CA cert and key since those are special cases.
-ca_crt_pem="$(mktemp)"; ca_key_pem="$(mktemp)"; mkdir -p /etc/ssl
-if [ ! -f /etc/ssl/ca.crt ]; then
-  rpctool get.ovf "TLS_CA_CRT_PEM" 2>/dev/null 1>"${ca_crt_pem}" || true
-  if ! is_file_empty "${ca_crt_pem}"; then
-    mv "${ca_crt_pem}" /etc/ssl/ca.crt
-    chmod 0644 /etc/ssl/ca.crt
-  fi
-  rm -f "${ca_crt_pem}"
-fi
-if [ ! -f /etc/ssl/ca.key ]; then
-  rpctool get.ovf "TLS_CA_KEY_PEM" 2>/dev/null 1>"${ca_key_pem}" || true
-  if ! is_file_empty "${ca_key_pem}"; then
-    mv "${ca_key_pem}" /etc/ssl/ca.key
-    chmod 0644 /etc/ssl/ca.key
-  fi
-  rm -f "${ca_key_pem}"
-fi
-
-# Get the SSH public keys to add to the root user.
-ssh_pub_keys="$(mktemp)"
-rpctool get.ovf "SSH_PUB_KEYS" 2>/dev/null 1>"${ssh_pub_keys}" || true
-if ! is_file_empty "${ssh_pub_keys}"; then
-  mkdir -p /root/.ssh; chmod 0700 /root/.ssh
-  echo >>/root/.ssh/authorized_keys
-  cat "${ssh_pub_keys}" >>/root/.ssh/authorized_keys
-  chmod 0400 /root/.ssh/authorized_keys
-  rm -f "${ssh_pub_keys}"
-fi
-
-# Check to see if the host name should be set.
-if val=$(rpctool get.ovf "HOST_FQDN" 2>/dev/null) && [ -n "${val}" ]; then
-  hostname "${val}"
-  printf '\n127.0.0.1\t%s\n' "${val}" >>/etc/hosts
-fi
+echo2 "${0} complete!"
+exit 0

@@ -1,7 +1,19 @@
 [Unit]
 Description=yakity.service
-After=network.target syslog.target cloud-final.service rc-local.service
-Wants=cloud-final.service
+
+After=  network.target network-online.target \
+        syslog.target rc-local.service \
+        cloud-final.service
+
+Before= kube-apiserver.service \
+        kube-controller-manager.service \
+        kube-proxy.service \
+        kube-scheduler.service \
+        kubelet.service \
+        containerd.service \
+        etcd.service \
+        nginx.service
+
 ConditionPathExists=!/var/lib/yakity/.yakity.service.done
 
 [Install]
@@ -12,7 +24,37 @@ Type=oneshot
 RemainAfterExit=yes
 TimeoutSec=0
 WorkingDirectory=/var/lib/yakity
-ExecStartPre=/var/lib/yakity/yakity-update.sh
-ExecStart=/bin/sh /var/lib/yakity/yakity-guestinfo.sh
-ExecStart=/var/lib/yakity/yakity.sh
+
+# Create the yakity log directory.
+ExecStartPre=/bin/mkdir -p /var/log/yakity
+
+# Update the host name with the value from the OVF environment.
+ExecStartPre=/bin/sh -c '/var/lib/yakity/yakity-sethostname.sh 2>&1 | tee /var/log/yakity/yakity-sethostname.log'
+
+# This command ensures the yakity service will wait until the network
+# is truly online before continuing with any of the subsequent 
+# ExecStartPre commands or the ExecStart command.
+ExecStartPre=/bin/sh -c "while true; do ping -c1 google.com >/dev/null && break; done"
+
+# This command checks to see if there were custom/updated versions of the
+# yakity-guestinfo and yakity scripts specified in the OVF data. If there
+# were then this command will download the new versions and replace the
+# ones on disk prior to the commands being executed.
+ExecStartPre=/bin/sh -c '/var/lib/yakity/yakity-update.sh 2>&1 | tee /var/log/yakity/yakity-update.log'
+
+# This program reads the OVF environment for yakity configuration data
+# and writes the yakity configuration file to /etc/default/yakity.
+ExecStartPre=/bin/sh -c '/var/lib/yakity/yakity-guestinfo.sh 2>&1 | tee /var/log/yakity/yakity-guestinfo.log'
+
+# The yakity script is responsible for turning up the Kubernetes cluster.
+ExecStart=/bin/sh -c '/var/lib/yakity/yakity.sh 2>&1 | tee /var/log/yakity.log'
+
+# This command ensures that this service is not run on subsequent boots.
 ExecStartPost=/bin/touch /var/lib/yakity/.yakity.service.done
+
+# Finally, this command moves the yakity configuration file to the
+# /tmp directory so the file is cleaned up automatically the next time
+# the temp space is reclaimed. This ensures the configuration file is
+# still available for debugging errors, but *will* get cleaned up 
+# eventually.
+ExecStartPost=/bin/mv -f /etc/default/yakity /tmp/yakity.defaults

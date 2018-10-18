@@ -7,13 +7,20 @@
 # Used by the yakity service to update the yakity resources.
 #
 
+set -e
+set -o pipefail
+
 # Update the path so that "rpctool" is in it.
 PATH=/var/lib/yakity:"${PATH}"
 
+# echo2 echoes the provided arguments to file descriptor 2, stderr.
+echo2() { echo "${@}" 1>&2; }
+
+# fatal echoes a string to stderr and then exits the program.
+fatal() { exit_code="${2:-${?}}"; echo2 "${1}"; exit "${exit_code}"; }
+
 if ! command -v rpctool >/dev/null 2>&1; then
-  exit_code="${?}"
-  echo "failed to find rpctool command" 1>&2
-  exit "${exit_code}"
+  fatal "failed to find rpctool command"
 fi
 
 update() {
@@ -21,12 +28,16 @@ update() {
   [ -n "${url}" ] || return 0
   curl -sSLo "${2}" "${url}" || return "${?}"
   chmod 0755 "${2}"
+  echo "updated ${2} from ${url}"
 }
 
 # Update the program that writes the yakity config from the vSphere GuestInfo.
 update YAKITY_GUESTINFO_URL /var/lib/yakity/yakity-guestinfo.sh || \
-  echo "failed to update yakity-guestinfo.sh" 1>&2
+  fatal "failed to update yakity-guestinfo.sh"
 
 # Update the main yakity program.
 update YAKITY_URL /var/lib/yakity/yakity.sh || \
-  echo "failed to update yakity.sh" 1>&2
+  fatal "failed to update yakity.sh"
+
+echo2 "${0} complete!"
+exit 0
