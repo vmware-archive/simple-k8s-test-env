@@ -226,7 +226,7 @@ This CA is used to sign the certificates generated for the Kubernetes cluster.</
         <Label>vSphere Datastore</Label>
         <Description>The datastore where VMs are created.</Description>
       </Property>
-      <Property ovf:value="sddc-cgw-network-3" ovf:type="string" ovf:key="VSPHERE_NETWORK">
+      <Property ovf:userConfigurable="true" ovf:value="sddc-cgw-network-3" ovf:type="string" ovf:key="VSPHERE_NETWORK">
         <Label>vSphere Network</Label>
         <Description>The name of the vSphere network to which the VM is connected.</Description>
       </Property>
