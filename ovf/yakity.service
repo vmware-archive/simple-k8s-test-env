@@ -5,14 +5,23 @@ After=  network.target network-online.target \
         syslog.target rc-local.service \
         cloud-final.service
 
-Before= kube-apiserver.service \
-        kube-controller-manager.service \
-        kube-proxy.service \
-        kube-scheduler.service \
-        kubelet.service \
-        containerd.service \
-        etcd.service \
-        nginx.service
+# TODO The yakity service *should* be started before the following services,
+#      but because yakity *installs* the following services, to include them
+#      in a Before line creates a circular dependency such that the following
+#      services will never start until the yakity service that installs them
+#      has completed. However, yakity will not complete until it is able to
+#      start the following services, or fails trying.
+#
+#      Hopefully there's some way to define these dependencies without creating
+#      the circular issue.
+#Before= kube-apiserver.service \
+#        kube-controller-manager.service \
+#        kube-proxy.service \
+#        kube-scheduler.service \
+#        kubelet.service \
+#        containerd.service \
+#        etcd.service \
+#        nginx.service
 
 ConditionPathExists=!/var/lib/yakity/.yakity.service.done
 
