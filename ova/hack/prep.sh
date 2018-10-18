@@ -3,27 +3,30 @@
 set -e
 set -o pipefail
 
-script_dir=$(python -c "import os; print(os.path.realpath('$(dirname "${0}")'))")
-target_os=centos
+LINUX_DISTRO=${LINUX_DISTRO:-centos}
+GOVC_VM=${GOVC_VM:-/SDDC-Datacenter/vm/Workloads/yakity-centos}
+SNAPSHOT_NAME=${SNAPSHOT_NAME:-rpctool}
 
-case "${target_os}" in
+script_dir=$(python -c "import os; print(os.path.realpath('$(dirname "${0}")'))")
+
+case "${LINUX_DISTRO}" in
 photon)
-  export GOVC_VM=/SDDC-Datacenter/vm/Workloads/photon2
+  export GOVC_VM=${GOVC_VM:-/SDDC-Datacenter/vm/Workloads/photon2}
   seal_script="${script_dir}/photon/photon-seal.sh"
-  snapshot=ssh
+  SNAPSHOT_NAME=${SNAPSHOT_NAME:-ssh}
   ;;
 centos)
-  export GOVC_VM=/SDDC-Datacenter/vm/Workloads/yakity-centos
+  export GOVC_VM=${GOVC_VM:-/SDDC-Datacenter/vm/Workloads/yakity-centos}
   seal_script="${script_dir}/centos/centos-seal.sh"
-  snapshot=rpctool
+  SNAPSHOT_NAME=${SNAPSHOT_NAME:-rpctool}
   ;;
 *)
-  echo "invalid target os: ${target_os}" 1>&2; exit 1
+  echo "invalid target os: ${LINUX_DISTRO}" 1>&2; exit 1
 esac
 
 # Revert the VM to the snapshot that includes the SSH key.
 echo "reverting the VM..."
-govc snapshot.revert "${snapshot}" 1>/dev/null
+govc snapshot.revert "${SNAPSHOT_NAME}" 1>/dev/null
 
 # Set additional properties on the VM.
 #govc vm.change -e "guestinfo.yakity.VSPHERE_PASSWORD='${VSPHERE_PASSWORD}'"
@@ -77,7 +80,7 @@ fi
 
 # Ensure the rpctool program is up-to-date.
 echo "make rpctool..."
-"${script_dir}/"../ovf/rpctool/hack/make.sh 1>/dev/null
+"${script_dir}/"../rpctool/hack/make.sh 1>/dev/null
 
 scp_to() {
   path="${1}"; shift
@@ -94,7 +97,7 @@ ssh_do() {
 ssh_do mkdir -p /var/lib/yakity
 
 # Check to see if the rpc tool needs to be updated.
-lcl_rpctool="${script_dir}/"../ovf/rpctool/rpctool
+lcl_rpctool="${script_dir}/"../rpctool/rpctool
 lcl_rpctool_hash=$({ shasum "${lcl_rpctool}" || sha1sum "${lcl_rpctool}"; } | \
                   awk '{print $1}')
 rem_rpctool_hash=$(ssh_do sha1sum /var/lib/yakity/rpctool 2>/dev/null | \
@@ -109,9 +112,9 @@ else
   ssh_do chmod 0755 /var/lib/yakity/rpctool
 fi
 
-scp_to /var/lib/yakity/ "${script_dir}/"../yakity.sh
-scp_to /var/lib/yakity/ "${script_dir}/"../ovf/*.sh
-scp_to /var/lib/yakity/ "${script_dir}/"../ovf/yakity.service
+scp_to /var/lib/yakity/ "${script_dir}/"../../yakity.sh
+scp_to /var/lib/yakity/ "${script_dir}/"../*.sh
+scp_to /var/lib/yakity/ "${script_dir}/"../yakity.service
 ssh_do 'chmod 0755 /var/lib/yakity/*.sh'
 ssh_do systemctl -l enable /var/lib/yakity/yakity.service
 

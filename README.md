@@ -4,6 +4,10 @@ Yakity stands for **Y**et **A**nother **K**ubernetes **I**nstaller
 a single-node, multi-node, or multi-master Kubernetes cluster.
 
 ## Quick Start
+The quickest way to provision a Kubernetes cluster with Yakity is on
+vSphere using this [OVA](https://s3-us-west-2.amazonaws.com/cnx.vmware/cicd/yakity-centos.ova).
+
+## Getting Started
 Yakity can provision Kubernetes on disparate hosts configured with DHCP
 or static networking. This example demonstrates using yakity to
 provision Kubernetes to two Amazon EC2 CentOS Linux instances.
@@ -55,10 +59,11 @@ Name:      kubernetes
 Address 1: 10.32.0.1
 ```
 
+## Building the OVA
+The yakity project includes support for an OVA that makes deploying Kubernetes
+to vSphere a snap. Instructions for building the OVA are found in the 
+[`ova`](/ova) directory.
+
 ## Todo
 * Better testing
 * Better documentaton
-* Implement a clean-up feature so that all the keys under `/yakity` are removed
-once the last node using them is finished.
-* Support Heptio's scanner / e2e service so that conformance tests can
-be executed once the cluster is online

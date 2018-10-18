@@ -136,12 +136,12 @@
       <ProductUrl>https://github.com/akutz/yakity</ProductUrl>
       <VendorUrl>https://vmware.com</VendorUrl>
       <Category>Guest OS</Category>
-      <Property ovf:qualifiers="MinLen(3)" ovf:userConfigurable="true" ovf:value="yakity.localdomain" ovf:type="string" ovf:key="HOST_FQDN">
+      <Property ovf:qualifiers="MinLen(3)" ovf:userConfigurable="true" ovf:value="kubernetes.yakity" ovf:type="string" ovf:key="HOST_FQDN">
         <Label>Host FQDN</Label>
-        <Description>The host's fully qualified domain name (FQDN). For example, photon-machine.localdomain.</Description>
+        <Description>The host's fully qualified domain name (FQDN).</Description>
       </Property>
-      <Property ovf:qualifiers="MinLen(1)" ovf:userConfigurable="true" ovf:value="" ovf:type="string" ovf:key="SSH_PUB_KEY">
-        <Label>SSH Public Keys</Label>
+      <Property ovf:qualifiers="MinLen(0)" ovf:userConfigurable="true" ovf:value="" ovf:type="string" ovf:key="SSH_PUB_KEY">
+        <Label>SSH Public Key</Label>
         <Description>An SSH public key to add to the root user's ".ssh/authorized_keys" file.</Description>
       </Property>
       <Category>Kubernetes</Category>
