@@ -28,10 +28,12 @@ YAK_DEFAULTS="${YAK_DEFAULTS:-/etc/default/yakity}"
 
 get_config_val() {
   if val="$(rpctool get "yakity.${1}" 2>/dev/null)" && [ -n "${val}" ]; then
-    echo2 "got config val: key=${1} source=guestinfo.yakity"
+    printf 'got config val\n  key = %s\n  src = %s\n' \
+      "${1}" "guestinfo.yakity" 1>&2
     echo "${val}"
   elif val="$(rpctool get.ovf "${1}" 2>/dev/null)" && [ -n "${val}" ]; then
-    echo2 "got config val: key=${1} source=guestinfo.ovfEnv"
+    printf 'got config val\n  key = %s\n  src = %s\n' \
+      "${1}" "guestinfo.ovfEnv" 1>&2
     echo "${val}"
   fi
 }
@@ -39,11 +41,20 @@ get_config_val() {
 write_config_val() {
   if [ -n "${2}" ]; then
     printf '%s="%s"\n' "${1}" "${2}" >>"${YAK_DEFAULTS}"
+    printf 'set config val\n  key = %s\n' "${1}" 1>&2
   elif val="$(get_config_val "${1}")" && [ -n "${val}" ]; then
     printf '%s="%s"\n' "${1}" "${val}" >>"${YAK_DEFAULTS}"
+    printf 'set config val\n  key = %s\n' "${1}" 1>&2
   fi
-  echo2 "wrote config val: key=${1}"
 }
+
+# Check to see if there is an SSH public key to add to the root user.
+if val="$(get_config_val SSH_PUB_KEY)" && [ -n "${val}" ]; then
+  mkdir -p /root/.ssh; chmod 0700 /root/.ssh
+  echo >>/root/.ssh/authorized_keys; chmod 0400 /root/.ssh/authorized_keys
+  echo "${val}" >>/root/.ssh/authorized_keys
+  echo2 "updated /root/.ssh/authorized_keys"
+fi
 
 # Get the PEM-encoded CA.
 if val="$(get_config_val TLS_CA_PEM)" && [ -n "${val}" ]; then
@@ -57,14 +68,6 @@ if val="$(get_config_val TLS_CA_PEM)" && [ -n "${val}" ]; then
   ca_key_gz="$(openssl rsa 2>/dev/null <"${pem}" | gzip -9c | base64 -w0)"
   write_config_val TLS_CA_KEY_GZ "${ca_key_gz}"
   rm -f "${pem}"
-fi
-
-# Check to see if there is an SSH public key to add to the root user.
-if val="$(get_config_val SSH_PUB_KEY)" && [ -n "${val}" ]; then
-  mkdir -p /root/.ssh; chmod 0700 /root/.ssh
-  echo >>/root/.ssh/authorized_keys; chmod 0400 /root/.ssh/authorized_keys
-  echo "${val}" >>/root/.ssh/authorized_keys
-  echo2 "updated /root/.ssh/authorized_keys"
 fi
 
 # Check to see if the information necessary to create a cloud provider
@@ -267,5 +270,4 @@ write_config_val TLS_CRT_UID
 write_config_val TLS_CRT_GID
 write_config_val TLS_CRT_PERM
 
-echo2 "${0} complete!"
 exit 0

@@ -151,5 +151,4 @@ echo "    host fqdn  = ${host_fqdn}"
 echo "    host name  = ${host_name}"
 echo "  domain name  = ${domain_name}"
 
-echo2 "${0} complete!"
 exit 0

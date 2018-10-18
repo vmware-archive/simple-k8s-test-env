@@ -39,5 +39,4 @@ update YAKITY_GUESTINFO_URL /var/lib/yakity/yakity-guestinfo.sh || \
 update YAKITY_URL /var/lib/yakity/yakity.sh || \
   fatal "failed to update yakity.sh"
 
-echo2 "${0} complete!"
 exit 0
