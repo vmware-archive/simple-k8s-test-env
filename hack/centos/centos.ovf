@@ -167,7 +167,7 @@ This value will be ignored if no etcd discovery URL is specified.</Description>
       </Property>
       <Property ovf:userConfigurable="true" ovf:type="string" ovf:key="ETCD_DISCOVERY">
         <Label>etcd Discovery URL</Label>
-        <Description>This value is required and must be set to the same value on all OVFs deployed to the same cluster. The value is the URL returned from https://discovery.etcd.io/new?size=NUM_NODES. 
+        <Description>This value is required and must be set to the same value on all OVFs deployed to the same cluster. The value is the URL returned from https://discovery.etcd.io/new?size=NUM_CONTROLLERS.
 
 Please see https://coreos.com/os/docs/latest/cluster-discovery.html for more information.</Description>
       </Property>
@@ -260,6 +260,12 @@ This CA is used to sign the certificates generated for the Kubernetes cluster.</
         <Description>The log level for the cloud controller manager (CCM). This only applies to out-of-tree CCMs.</Description>
       </Property>
       <Category>Yakity</Category>
+      <Property ovf:qualifiers="MinValue(300) MaxValue(65535)" ovf:userConfigurable="true" ovf:value="900" ovf:type="uint16" ovf:key="ETCD_LEASE_TTL">
+        <Label>Distributed Config Lease TTL</Label>
+        <Description>The number of seconds of the lease used to control the lifetime of the keys yakity stores in etcd to support discovery and synchronization between nodes when installing a multi-node cluster. The default value is equivalent to 15 minutes.
+
+This value should be sufficiently large to provide enough time for all nodes to discovery one another, but also small enough to ensure any sensitive information stored in the keys is cleaned up in a timely manner.</Description>
+      </Property>
       <Property ovf:userConfigurable="true" ovf:type="string" ovf:key="YAKITY_GUESTINFO_URL">
         <Label>Yakity GuestInfo URL</Label>
         <Description>The URL of the Yakity GuestInfo script to use. This may be set to override the Yakity GuestInfo script built into the OVF.</Description>
