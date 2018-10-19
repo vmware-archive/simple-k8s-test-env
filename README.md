@@ -1,7 +1,17 @@
 # yakity
+In a world with dozens of ways to turn up Kubernetes, why Yakity? Other 
+deployment tools focus on developers building applications that run on
+Kubernetes.
+
+*Yakity is for developers building and testing Kubernetes*.
+
 Yakity stands for **Y**et **A**nother **K**ubernetes **I**nstaller 
 **T**hing**y**, and that's exactly what it is -- a program to deploy
-a single-node, multi-node, or multi-master Kubernetes cluster.
+a single-node, multi-node, or multi-master Kubernetes cluster. With 
+support for deploying builds staged with
+[`kubetest`](https://github.com/kubernetes/test-infra/tree/master/kubetest),
+yakity is the ideal solution for building, testing, and deploying
+Kubernetes on platforms such as VMware vSphere.
 
 ## Quick Start
 The quickest way to provision a Kubernetes cluster with Yakity is on
