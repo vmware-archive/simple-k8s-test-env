@@ -11,14 +11,14 @@ script_dir=$(python -c "import os; print(os.path.realpath('$(dirname "${0}")'))"
 
 case "${LINUX_DISTRO}" in
 photon)
-  export GOVC_VM=${GOVC_VM:-/SDDC-Datacenter/vm/Workloads/photon2}
+  export GOVC_VM=/SDDC-Datacenter/vm/Workloads/photon2
   seal_script="${script_dir}/photon/photon-seal.sh"
-  SNAPSHOT_NAME=${SNAPSHOT_NAME:-ssh}
+  SNAPSHOT_NAME=ssh
   ;;
 centos)
-  export GOVC_VM=${GOVC_VM:-/SDDC-Datacenter/vm/Workloads/yakity-centos}
+  export GOVC_VM=/SDDC-Datacenter/vm/Workloads/yakity-centos
   seal_script="${script_dir}/centos/centos-seal.sh"
-  SNAPSHOT_NAME=${SNAPSHOT_NAME:-rpctool}
+  SNAPSHOT_NAME=rpctool
   ;;
 *)
   echo "invalid target os: ${LINUX_DISTRO}" 1>&2; exit 1
@@ -80,7 +80,11 @@ fi
 
 # Ensure the rpctool program is up-to-date.
 echo "make rpctool..."
-"${script_dir}/"../rpctool/hack/make.sh 1>/dev/null
+if docker version >/dev/null 2>&1; then
+  "${script_dir}/"../rpctool/hack/make.sh 1>/dev/null
+else
+  GOOS=linux make -C "${script_dir}/"../rpctool 1>/dev/null
+fi
 
 scp_to() {
   path="${1}"; shift
@@ -94,7 +98,7 @@ ssh_do() {
 }
 
 # Use SSH and SCP to configure the host.
-ssh_do mkdir -p /var/lib/yakity
+ssh_do mkdir -p /var/lib/yakity /var/lib/kube-update
 
 # Check to see if the rpc tool needs to be updated.
 lcl_rpctool="${script_dir}/"../rpctool/rpctool
@@ -112,11 +116,24 @@ else
   ssh_do chmod 0755 /var/lib/yakity/rpctool
 fi
 
-scp_to /var/lib/yakity/ "${script_dir}/"../../yakity.sh
-scp_to /var/lib/yakity/ "${script_dir}/"../*.sh
-scp_to /var/lib/yakity/ "${script_dir}/"../yakity.service
+# Symlink rpctool into a well-defined directory that's in the system PATH.
+echo "rpctool: create symlink to /usr/local/bin/rpctool"
+ssh_do ln -s /var/lib/yakity/rpctool /usr/local/bin/rpctool 2>/dev/null || true
+
+scp_to /var/lib/yakity/ \
+  "${script_dir}/"../../yakity.sh \
+  "${script_dir}/"../yakity-guestinfo.sh \
+  "${script_dir}/"../yakity-sethostname.sh \
+  "${script_dir}/"../yakity-update.sh \
+  "${script_dir}/"../yakity.service
 ssh_do 'chmod 0755 /var/lib/yakity/*.sh'
 ssh_do systemctl -l enable /var/lib/yakity/yakity.service
+
+scp_to /var/lib/kube-update/ \
+  "${script_dir}/"../kube-update/kube-update.sh \
+  "${script_dir}/"../kube-update/kube-update.service
+ssh_do 'chmod 0755 /var/lib/kube-update/*.sh'
+ssh_do systemctl -l enable /var/lib/kube-update/kube-update.service
 
 if [ "${1}" = "seal" ]; then
   if [ -f "${seal_script}" ]; then
@@ -128,7 +145,7 @@ if [ "${1}" = "seal" ]; then
   exit 0
 fi
 
-ssh_do systemctl -l --no-block start yakity
+ssh_do systemctl -l --no-block start yakity kube-update
 
 SSH_CMD="ssh -o ProxyCommand='ssh -W ${VM_IP}:22 $(whoami)@50.112.88.129' root@${VM_IP}"
 printf '\nlog into host with the following command:\n\n  %s\n' "${SSH_CMD}"

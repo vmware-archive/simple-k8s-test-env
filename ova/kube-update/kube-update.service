@@ -1,0 +1,28 @@
+[Unit]
+Description=kube-update.service
+
+After=  network.target network-online.target \
+        syslog.target rc-local.service \
+        cloud-final.service \
+        kube-apiserver.service \
+        kube-controller-manager.service \
+        kube-proxy.service \
+        kube-scheduler.service \
+        kubelet.service
+
+[Install]
+WantedBy=multi-user.target
+
+[Service]
+Type=simple
+TimeoutSec=0
+
+# This command ensures the service will wait until the network
+# is truly online before continuing with any of the subsequent 
+# ExecStartPre commands or the ExecStart command.
+ExecStartPre=/bin/sh -c "while true; do ping -c1 google.com >/dev/null && break; done"
+
+# This script polls the VMware GuestInfo property "guestinfo.kube-update.url"
+# for updated Kubernetes binaries and replaces the existing ones on this host
+# with the updated copies.
+ExecStart=/var/lib/kube-update/kube-update.sh

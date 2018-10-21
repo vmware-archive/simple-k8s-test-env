@@ -3,7 +3,7 @@ Yakity can be deployed many ways, but perhaps the simplest is onto a
 vSphere platform using an OVA. This directory contains the bits
 necessary to build the yakity OVA.
 
-## Support Linux Distributions
+## Supported Linux Distributions
 The yakity OVA comes in a variety of flavors:
 * CentOS 7 ([OVA](https://s3-us-west-2.amazonaws.com/cnx.vmware/cicd/yakity-centos.ova))
 * PhotonOS (work-in-progress)
