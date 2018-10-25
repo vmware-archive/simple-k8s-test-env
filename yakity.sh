@@ -4278,10 +4278,6 @@ create_k8s_admin_group || fatal "failed to create the k8s-admin group"
 # Configure iptables.
 configure_iptables || fatal "failed to configure iptables"
 
-# If this host uses systemd-resolved, then this step will disable and
-# mask the service. This is so port 53 is available for CoreDNS.
-disable_resolved || fatal "failed to disable systemd-resolved"
-
 # If this host used NetworkManager then this step will keep NetworkManager
 # from stomping on the contents of /etc/resolv.conf upon reboot.
 disable_net_man_dns || fatal "failed to disable network manager dns"
@@ -4325,6 +4321,10 @@ print_all_node_info || fatal "failed to print all node info"
 # Creates the DNS entries in etcd that the CoreDNS servers running
 # on the controller nodes will use.
 create_dns_entries || fatal "failed to created DNS entries in etcd"
+
+# If this host uses systemd-resolved, then this step will disable and
+# mask the service. This is so port 53 is available for CoreDNS.
+disable_resolved || fatal "failed to disable systemd-resolved"
 
 # CoreDNS should be installed on members of the etcd cluster.
 if [ ! "${NODE_TYPE}" = "worker" ]; then
