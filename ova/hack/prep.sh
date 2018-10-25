@@ -4,21 +4,19 @@ set -e
 set -o pipefail
 
 LINUX_DISTRO=${LINUX_DISTRO:-centos}
-GOVC_VM=${GOVC_VM:-/SDDC-Datacenter/vm/Workloads/yakity-centos}
-SNAPSHOT_NAME=${SNAPSHOT_NAME:-rpctool}
 
 script_dir=$(python -c "import os; print(os.path.realpath('$(dirname "${0}")'))")
 
 case "${LINUX_DISTRO}" in
 photon)
-  export GOVC_VM=/SDDC-Datacenter/vm/Workloads/photon2
   seal_script="${script_dir}/photon/photon-seal.sh"
-  SNAPSHOT_NAME=ssh
+  export GOVC_VM=${GOVC_VM:-/SDDC-Datacenter/vm/Workloads/photon2}
+  SNAPSHOT_NAME=${SNAPSHOT_NAME:-bin}
   ;;
 centos)
-  export GOVC_VM=/SDDC-Datacenter/vm/Workloads/yakity-centos
   seal_script="${script_dir}/centos/centos-seal.sh"
-  SNAPSHOT_NAME=rpctool
+  export GOVC_VM=${GOVC_VM:-/SDDC-Datacenter/vm/Workloads/yakity-centos}
+  SNAPSHOT_NAME=${SNAPSHOT_NAME:-bin}
   ;;
 *)
   echo "invalid target os: ${LINUX_DISTRO}" 1>&2; exit 1
@@ -30,6 +28,25 @@ govc snapshot.revert "${SNAPSHOT_NAME}" 1>/dev/null
 
 # Set additional properties on the VM.
 #govc vm.change -e "guestinfo.yakity.VSPHERE_PASSWORD='${VSPHERE_PASSWORD}'"
+if [ -n "${CLONE_MODE}" ]; then
+  case "${CLONE_MODE}" in
+  cloned)
+    govc vm.change -e "guestinfo.yakity.CLONE_MODE=${CLONE_MODE}"
+    ;;
+  1|true|True)
+    govc vm.change -e "guestinfo.yakity.CLONE_MODE=${CLONE_MODE}"
+    govc vm.change -e "guestinfo.yakity.CLOUD_PROVIDER_TYPE=${CLOUD_PROVIDER_TYPE:-External}"
+    govc vm.change -e "guestinfo.yakity.HOST_FQDN=${HOST_FQDN:-kubernetes.yakity}"
+    govc vm.change -e "guestinfo.yakity.NODE_TYPE=${NODE_TYPE:-controller}"
+    govc vm.change -e "guestinfo.yakity.NUM_NODES=${NUM_NODES:-2}"
+    govc vm.change -e "guestinfo.yakity.NUM_CONTROLLERS=${NUM_CONTROLLERS:-1}"
+    govc vm.change -e "guestinfo.yakity.NUM_BOTH=${NUM_BOTH:-0}"
+    ;;
+  *)
+    govc vm.change -e "guestinfo.yakity.CLONE_MODE=disabled"
+    ;;
+  esac
+fi
 
 # Power on the VM
 echo "powering on the VM..."
@@ -78,7 +95,11 @@ if [ "${NEW_CA}" = "1" ]; then
   fi
 fi
 
-# Ensure the rpctool program is up-to-date.
+# Ensure the govc program is available.
+echo "make govc..."
+make -C "${script_dir}/.." govc-linux-amd64 1>/dev/null
+
+# Ensure the rpctool program is available.
 echo "make rpctool..."
 if docker version >/dev/null 2>&1; then
   "${script_dir}/"../rpctool/hack/make.sh 1>/dev/null
@@ -98,13 +119,29 @@ ssh_do() {
 }
 
 # Use SSH and SCP to configure the host.
-ssh_do mkdir -p /var/lib/yakity /var/lib/kube-update
+ssh_do mkdir -p /var/lib/yakity /opt/bin
 
-# Check to see if the rpc tool needs to be updated.
+# Check to see if the govc program needs to be updated.
+lcl_govc="${script_dir}/"../govc-linux-amd64
+lcl_govc_hash=$({ shasum "${lcl_govc}" || sha1sum "${lcl_govc}"; } | \
+                  awk '{print $1}')
+rem_govc_hash=$(ssh_do sha1sum /opt/bin/govc 2>/dev/null | \
+  awk '{print $1}') || unset rem_govc_hash
+printf 'govc\n  local  = %s\n  remote = %s\n  status = ' \
+  "${lcl_govc_hash}" "${rem_govc_hash}"
+if [ "${lcl_govc_hash}" = "${rem_govc_hash}" ]; then
+  echo "up-to-date"
+else
+  echo "updating..."
+  scp_to /opt/bin/ "${lcl_govc}"
+  ssh_do chmod 0755 /opt/bin/govc
+fi
+
+# Check to see if the rpctool program needs to be updated.
 lcl_rpctool="${script_dir}/"../rpctool/rpctool
 lcl_rpctool_hash=$({ shasum "${lcl_rpctool}" || sha1sum "${lcl_rpctool}"; } | \
                   awk '{print $1}')
-rem_rpctool_hash=$(ssh_do sha1sum /var/lib/yakity/rpctool 2>/dev/null | \
+rem_rpctool_hash=$(ssh_do sha1sum /opt/bin/rpctool 2>/dev/null | \
   awk '{print $1}') || unset rem_rpctool_hash
 printf 'rpctool\n  local  = %s\n  remote = %s\n  status = ' \
   "${lcl_rpctool_hash}" "${rem_rpctool_hash}"
@@ -112,28 +149,27 @@ if [ "${lcl_rpctool_hash}" = "${rem_rpctool_hash}" ]; then
   echo "up-to-date"
 else
   echo "updating..."
-  scp_to /var/lib/yakity/ "${lcl_rpctool}"
-  ssh_do chmod 0755 /var/lib/yakity/rpctool
+  scp_to /opt/bin/ "${lcl_rpctool}"
+  ssh_do chmod 0755 /opt/bin/rpctool
 fi
 
-# Symlink rpctool into a well-defined directory that's in the system PATH.
-echo "rpctool: create symlink to /usr/local/bin/rpctool"
-ssh_do ln -s /var/lib/yakity/rpctool /usr/local/bin/rpctool 2>/dev/null || true
-
 scp_to /var/lib/yakity/ \
-  "${script_dir}/"../../yakity.sh \
-  "${script_dir}/"../yakity-guestinfo.sh \
-  "${script_dir}/"../yakity-sethostname.sh \
-  "${script_dir}/"../yakity-update.sh \
-  "${script_dir}/"../yakity.service
+  "${script_dir}/../../yakity.sh" \
+  "${script_dir}/../yakity-config-keys.env" \
+  "${script_dir}/../yakity-clone.sh" \
+  "${script_dir}/../yakity-guestinfo.sh" \
+  "${script_dir}/../yakity-kubeconfig.sh" \
+  "${script_dir}/../yakity-sethostname.sh" \
+  "${script_dir}/../yakity-update.sh" \
+  "${script_dir}/../yakity-vsphere.sh" \
+  "${script_dir}/../yakity.service" \
+  "${script_dir}/../kube-update/kube-update.sh" \
+  "${script_dir}/../kube-update/kube-update.service"
+scp_to /var/lib/yakity/yakity-sysprep.sh \
+  "${script_dir}/../sysprep-${LINUX_DISTRO}.sh"
 ssh_do 'chmod 0755 /var/lib/yakity/*.sh'
-ssh_do systemctl -l enable /var/lib/yakity/yakity.service
-
-scp_to /var/lib/kube-update/ \
-  "${script_dir}/"../kube-update/kube-update.sh \
-  "${script_dir}/"../kube-update/kube-update.service
-ssh_do 'chmod 0755 /var/lib/kube-update/*.sh'
-ssh_do systemctl -l enable /var/lib/kube-update/kube-update.service
+ssh_do systemctl -l enable /var/lib/yakity/yakity.service \
+                           /var/lib/yakity/kube-update.service
 
 if [ "${1}" = "seal" ]; then
   if [ -f "${seal_script}" ]; then

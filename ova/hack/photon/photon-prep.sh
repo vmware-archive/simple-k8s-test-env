@@ -1,15 +1,10 @@
 #!/bin/sh
 
-# The below commands are what are used to prep a vanilla CentOS 7 minimal
-# installation in preparation to be processed by the yakity prep 
+# The below commands are what are used to prep a vanilla PhotonOS2
+# installation in preparation to be processed by the yakity prep
 # scripts.
-yum install -y libicu && \
-yum install -y open-vm-tools && \
-yum update -y && \
-yum autoremove -y postfix firewalld && \
-yum install -y yum-utils yum-cron \
-               iptables-services \
-               ipvsadm unzip && \
+tdnf upgrade -y && \
+tdnf install -y ipvsadm unzip && \
 { cat >/etc/sysconfig/iptables <<EOF
 *filter
 :INPUT DROP [0:0]
@@ -46,8 +41,7 @@ EOF
 } && \
 rm -f /etc/sysconfig/ip6tables && \
 cp /etc/sysconfig/iptables /etc/sysconfig/ip6tables && \
-systemctl enable iptables ip6tables && \
-systemctl start iptables ip6tables && \
+ln -s /usr/bin/python3 /usr/bin/python && \
 mkdir -p /opt/bin && chmod 0755 /opt /opt/bin && cd /opt/bin && \
 curl "https://s3.amazonaws.com/aws-cli/awscli-bundle.zip" -o "awscli-bundle.zip" && \
 unzip awscli-bundle.zip && \

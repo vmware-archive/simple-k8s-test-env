@@ -10,8 +10,9 @@
 set -e
 set -o pipefail
 
-# Update the path so that "rpctool" is in it.
-PATH=/var/lib/yakity:"${PATH}"
+# Add ${BIN_DIR} to the path
+BIN_DIR="${BIN_DIR:-/opt/bin}"; mkdir -p "${BIN_DIR}"; chmod 0755 "${BIN_DIR}"
+echo "${PATH}" | grep -qF "${BIN_DIR}" || export PATH="${BIN_DIR}:${PATH}"
 
 # echo2 echoes the provided arguments to file descriptor 2, stderr.
 echo2() { echo "${@}" 1>&2; }

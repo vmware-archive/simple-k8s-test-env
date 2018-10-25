@@ -5,24 +5,6 @@ After=  network.target network-online.target \
         syslog.target rc-local.service \
         cloud-final.service
 
-# TODO The yakity service *should* be started before the following services,
-#      but because yakity *installs* the following services, to include them
-#      in a Before line creates a circular dependency such that the following
-#      services will never start until the yakity service that installs them
-#      has completed. However, yakity will not complete until it is able to
-#      start the following services, or fails trying.
-#
-#      Hopefully there's some way to define these dependencies without creating
-#      the circular issue.
-#Before= kube-apiserver.service \
-#        kube-controller-manager.service \
-#        kube-proxy.service \
-#        kube-scheduler.service \
-#        kubelet.service \
-#        containerd.service \
-#        etcd.service \
-#        nginx.service
-
 ConditionPathExists=!/var/lib/yakity/.yakity.service.done
 
 [Install]
@@ -38,7 +20,13 @@ WorkingDirectory=/var/lib/yakity
 ExecStartPre=/bin/mkdir -p /var/log/yakity
 
 # Update the host name with the value from the OVF environment.
-ExecStartPre=/bin/sh -c '/var/lib/yakity/yakity-sethostname.sh 2>&1 | tee /var/log/yakity/yakity-sethostname.log'
+ExecStartPre=/bin/sh -c '/var/lib/yakity/yakity-sethostname.sh 2>&1 | tee /var/log/yakity/sethostname.log'
+
+# Get information about the vSphere platform and select the cloud provider.
+ExecStartPre=/bin/sh -c '/var/lib/yakity/yakity-vsphere.sh 2>&1 | tee /var/log/yakity/vsphere.log'
+
+# See if the OVA was deployed to bootstrap a multi-node cluster.
+ExecStartPre=/bin/sh -c '/var/lib/yakity/yakity-clone.sh 2>&1 | tee /var/log/yakity/clone.log'
 
 # This command ensures the yakity service will wait until the network
 # is truly online before continuing with any of the subsequent 
@@ -49,14 +37,19 @@ ExecStartPre=/bin/sh -c "while true; do ping -c1 google.com >/dev/null && break;
 # yakity-guestinfo and yakity scripts specified in the OVF data. If there
 # were then this command will download the new versions and replace the
 # ones on disk prior to the commands being executed.
-ExecStartPre=/bin/sh -c '/var/lib/yakity/yakity-update.sh 2>&1 | tee /var/log/yakity/yakity-update.log'
+ExecStartPre=/bin/sh -c '/var/lib/yakity/yakity-update.sh 2>&1 | tee /var/log/yakity/update.log'
 
 # This program reads the OVF environment for yakity configuration data
 # and writes the yakity configuration file to /etc/default/yakity.
-ExecStartPre=/bin/sh -c '/var/lib/yakity/yakity-guestinfo.sh 2>&1 | tee /var/log/yakity/yakity-guestinfo.log'
+ExecStartPre=/bin/sh -c '/var/lib/yakity/yakity-guestinfo.sh 2>&1 | tee /var/log/yakity/guestinfo.log'
 
 # The yakity script is responsible for turning up the Kubernetes cluster.
 ExecStart=/bin/sh -c '/var/lib/yakity/yakity.sh 2>&1 | tee /var/log/yakity.log'
+
+# This command generates a kubeconfig that can be used to access the cluster
+# (if EXTERNAL_FQDN is set) or the control plane nodes. The kubeconfig file
+# is assigned to the guestinfo property "yakity.kubeconfig".
+ExecStartPost=/bin/sh -c '/var/lib/yakity/yakity-kubeconfig.sh 2>&1 | tee /var/log/kubeconfig.log'
 
 # This command ensures that this service is not run on subsequent boots.
 ExecStartPost=/bin/touch /var/lib/yakity/.yakity.service.done

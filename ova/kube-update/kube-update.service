@@ -8,7 +8,8 @@ After=  network.target network-online.target \
         kube-controller-manager.service \
         kube-proxy.service \
         kube-scheduler.service \
-        kubelet.service
+        kubelet.service \
+        yakity.service
 
 [Install]
 WantedBy=multi-user.target
@@ -25,4 +26,4 @@ ExecStartPre=/bin/sh -c "while true; do ping -c1 google.com >/dev/null && break;
 # This script polls the VMware GuestInfo property "guestinfo.kube-update.url"
 # for updated Kubernetes binaries and replaces the existing ones on this host
 # with the updated copies.
-ExecStart=/var/lib/kube-update/kube-update.sh
+ExecStart=/var/lib/yakity/kube-update.sh

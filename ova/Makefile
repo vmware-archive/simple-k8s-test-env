@@ -1,30 +1,47 @@
 all: build
 
-YAKITY_CENTOS_VMDK ?= $(HOME)/Downloads/yakity-centos-1.vmdk
-YAKITY_CENTOS_NVRAM ?= $(HOME)/Downloads/yakity-centos-2.nvram
+OVF_EXPORT_DIR ?= $(HOME)/Downloads
 
-prep-centos:
-	LINUX_DISTRO=centos hack/prep.sh
+govc: govc-linux-amd64
+govc-linux-amd64:
+	go get github.com/vmware/govmomi/govc
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
+	go build -a -tags netgo -ldflags "-w" \
+	-o $@ github.com/vmware/govmomi/govc
 
-seal-centos:
-	LINUX_DISTRO=centos hack/prep.sh seal
+prep-centos prep-photon: govc-linux-amd64
+	LINUX_DISTRO=$(subst prep-,,$@) hack/prep.sh
 
-yakity-centos-1.vmdk: $(YAKITY_CENTOS_VMDK)
+seal-centos seal-photon: govc-linux-amd64
+	LINUX_DISTRO=$(subst seal-,,$@) hack/prep.sh seal
+
+prep: prep-centos prep-photon
+
+seal: seal-centos seal-photon
+
+%-1.vmdk: $(OVF_EXPORT_DIR)/%-1.vmdk
 	cp -f $? $@
 
-yakity-centos-2.nvram: $(YAKITY_CENTOS_NVRAM)
+%-2.nvram: $(OVF_EXPORT_DIR)/%-2.nvram
 	cp -f $? $@
 
-yakity-centos.ova: yakity-centos.ovf yakity-centos-1.vmdk yakity-centos-2.nvram
+yakity-%.ova: yakity-%.ovf yakity-%-1.vmdk yakity-%-2.nvram
 	tar -cf $@ $^
 
-prep: prep-centos
+build ova: yakity-centos.ova yakity-photon.ova
 
-seal: seal-centos
+upload-centos: yakity-centos.ova
+	aws s3 cp $< s3://cnx.vmware/cicd/$< \
+	  --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers && \
+	  echo https://s3-us-west-2.amazonaws.com/cnx.vmware/cicd/$<
 
-upload: yakity-centos.ova
-	$(foreach f,$^,aws s3 cp $(f) s3://cnx.vmware/cicd/$(notdir $(f)) --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers && echo https://s3-us-west-2.amazonaws.com/cnx.vmware/cicd/$(notdir $(f)))
+upload-photon: yakity-photon.ova
+	aws s3 cp $< s3://cnx.vmware/cicd/$< \
+	  --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers && \
+	  echo https://s3-us-west-2.amazonaws.com/cnx.vmware/cicd/$<
 
-build: yakity-centos.ova
+.PHONY: prep seal upload \
+		prep-centos seal-centos upload-centos \
+		prep-photon seal-photon upload-photon
 
-.PHONY: prep-centos seal-centos prep seal upload
+.PRECIOUS: %-1.vmdk %-2.nvram

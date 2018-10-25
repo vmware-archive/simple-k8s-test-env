@@ -23,3 +23,8 @@ kubeconfig
 /hack/Dockerfile*
 /hack/*.tar.gz
 /hack/Makefile
+
+# Ignore scratch files
+/vm.json
+/ova/import*
+/ova/hack/import*

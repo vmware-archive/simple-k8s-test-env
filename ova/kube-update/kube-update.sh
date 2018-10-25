@@ -17,6 +17,10 @@
 set -e
 set -o pipefail
 
+# Add ${BIN_DIR} to the path
+BIN_DIR="${BIN_DIR:-/opt/bin}"; mkdir -p "${BIN_DIR}"; chmod 0755 "${BIN_DIR}"
+echo "${PATH}" | grep -qF "${BIN_DIR}" || export PATH="${BIN_DIR}:${PATH}"
+
 # echo2 echoes the provided arguments to file descriptor 2, stderr.
 echo2() { echo "${@}" 1>&2; }
 
@@ -55,9 +59,6 @@ TEMP_FILE_AREA="$(mktemp -d)" || fatal "failed to create TEMP_FILE_AREA"
 
 # The temp file used to contain the names of the files in TEMP_FILE_AREA.
 TEMP_FILE_LIST="$(mktemp)" || fatal "failed to create TEMP_FILE_LIST"
-
-# The default directory to which to copy updated binaries.
-BIN_DIR="${BIN_DIR:-/opt/bin}"
 
 # The following environment variables are the locations of the eponymous
 # Kubernetes binaries.
@@ -143,6 +144,15 @@ rpc_exec() {
   rpc_flush_log
   return "${exit_code}"
 }
+
+govc_env="$(pwd)/.govc.env"
+if [ -f "${govc_env}" ]; then
+  # Load the govc config into this script's process
+  # shellcheck disable=SC1090
+  set -o allexport && . "${govc_env}" && set +o allexport
+  unset GOVC_SELF
+  echo "loaded ${govc_env}"
+fi
 
 echo "beginning message loop..."
 

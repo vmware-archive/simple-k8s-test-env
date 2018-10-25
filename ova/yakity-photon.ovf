@@ -1,8 +1,8 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <Envelope xmlns="http://schemas.dmtf.org/ovf/envelope/1" xmlns:ovf="http://schemas.dmtf.org/ovf/envelope/1" xmlns:vmw="http://www.vmware.com/schema/ovf" xmlns:rasd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData" xmlns:vssd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_VirtualSystemSettingData">
   <References>
-    <File ovf:id="file1" ovf:href="yakity-centos-1.vmdk"/>
-    <File ovf:id="file2" ovf:href="yakity-centos-2.nvram" ovf:size="8684"/>
+    <File ovf:id="file1" ovf:href="yakity-photon-1.vmdk"/>
+    <File ovf:id="file2" ovf:href="yakity-photon-2.nvram" ovf:size="74232"/>
   </References>
   <DiskSection>
     <Info>List of the virtual disks</Info>
@@ -21,16 +21,16 @@
   <vmw:IpAssignmentSection vmw:schemes="dhcp ovfenv" vmw:protocols="IPv4">
     <Info>Supported IP assignment schemes</Info>
   </vmw:IpAssignmentSection>
-  <VirtualSystem ovf:id="yakity-centos">
+  <VirtualSystem ovf:id="yakity-photon">
     <Info>A Virtual system</Info>
-    <Name>yakity-centos</Name>
+    <Name>yakity-photon</Name>
     <AnnotationSection>
       <Info>A human-readable annotation</Info>
       <Annotation>A turn-key OVF solution for deploying single or multi-node Kubernetes clusters.</Annotation>
     </AnnotationSection>
-    <OperatingSystemSection ovf:id="107" ovf:version="7" vmw:osType="centos7_64Guest">
+    <OperatingSystemSection ovf:id="100" ovf:version="7" vmw:osType="other3xLinux64Guest">
       <Info>The operating system installed</Info>
-      <Description>CentOS 7 (64-bit)</Description>
+      <Description>VMware Photon OS (64-bit)</Description>
     </OperatingSystemSection>
     <VirtualHardwareSection ovf:transport="com.vmware.guestInfo">
       <Info>Virtual hardware requirements</Info>
@@ -65,15 +65,11 @@
         <rasd:ResourceType>6</rasd:ResourceType>
         <vmw:Config ovf:required="false" vmw:key="slotInfo.pciSlotNumber" vmw:value="160"/>
       </Item>
-      <Item>
-        <rasd:Address>0</rasd:Address>
-        <rasd:Description>SATA Controller</rasd:Description>
-        <rasd:ElementName>SATA Controller 1</rasd:ElementName>
+      <rasd:Address>1</rasd:Address>
+        <rasd:Description>IDE Controller</rasd:Description>
+        <rasd:ElementName>IDE Controller 1</rasd:ElementName>
         <rasd:InstanceID>4</rasd:InstanceID>
-        <rasd:ResourceSubType>vmware.sata.ahci</rasd:ResourceSubType>
-        <rasd:ResourceType>20</rasd:ResourceType>
-        <vmw:Config ovf:required="false" vmw:key="slotInfo.pciSlotNumber" vmw:value="33"/>
-      </Item>
+        <rasd:ResourceType>5</rasd:ResourceType>
       <Item>
         <rasd:AddressOnParent>0</rasd:AddressOnParent>
         <rasd:ElementName>Hard Disk 1</rasd:ElementName>
@@ -107,10 +103,10 @@
         <rasd:ElementName>Video card</rasd:ElementName>
         <rasd:InstanceID>8</rasd:InstanceID>
         <rasd:ResourceType>24</rasd:ResourceType>
-        <vmw:Config ovf:required="false" vmw:key="numDisplays" vmw:value="1"/>
-        <vmw:Config ovf:required="false" vmw:key="enable3DSupport" vmw:value="false"/>
+        <vmw:Config ovf:required="false" vmw:key="videoRamSizeInKB" vmw:value="4096"/>
         <vmw:Config ovf:required="false" vmw:key="graphicsMemorySizeInKB" vmw:value="262144"/>
-        <vmw:Config ovf:required="false" vmw:key="videoRamSizeInKB" vmw:value="8192"/>
+        <vmw:Config ovf:required="false" vmw:key="enable3DSupport" vmw:value="false"/>
+        <vmw:Config ovf:required="false" vmw:key="numDisplays" vmw:value="1"/>
         <vmw:Config ovf:required="false" vmw:key="useAutoDetect" vmw:value="false"/>
         <vmw:Config ovf:required="false" vmw:key="use3dRenderer" vmw:value="automatic"/>
       </Item>
@@ -122,7 +118,7 @@
       <vmw:Config ovf:required="false" vmw:key="cpuHotRemoveEnabled" vmw:value="false"/>
       <vmw:Config ovf:required="false" vmw:key="memoryHotAddEnabled" vmw:value="false"/>
       <vmw:Config ovf:required="false" vmw:key="bootOptions.efiSecureBootEnabled" vmw:value="false"/>
-      <vmw:Config ovf:required="false" vmw:key="firmware" vmw:value="bios"/>
+      <vmw:Config ovf:required="false" vmw:key="firmware" vmw:value="efi"/>
       <vmw:Config ovf:required="false" vmw:key="virtualICH7MPresent" vmw:value="false"/>
       <vmw:ExtraConfig ovf:required="false" vmw:key="nvram" vmw:value="ovf:/file/file2"/>
     </VirtualHardwareSection>
@@ -157,21 +153,19 @@
         <Label>Number of Control Plane Nodes</Label>
         <Description>The number of control plane nodes in the Kubernetes cluster. This number should be the same value as the "size" query parameter given to the etcd discovery service that returns the etcd discovery URL.
 
-This value will be ignored if the option to bootstrap a cluster is not enabled or no etcd discovery URL is specified.</Description>
+This value will be ignored if no etcd discovery URL is specified.</Description>
       </Property>
       <Property ovf:qualifiers="MinValue(1) MaxValue(5000)" ovf:userConfigurable="true" ovf:value="1" ovf:type="uint16" ovf:key="NUM_NODES">
         <Label>Number of Nodes</Label>
         <Description>The total number of nodes in the Kubernetes cluster. This includes control plane nodes as well as worker nodes.
 
-This value will be ignored if the option to bootstrap a cluster is not enabled or no etcd discovery URL is specified.</Description>
+This value will be ignored if no etcd discovery URL is specified.</Description>
       </Property>
       <Property ovf:userConfigurable="true" ovf:type="string" ovf:key="ETCD_DISCOVERY">
         <Label>etcd Discovery URL</Label>
         <Description>This value is required and must be set to the same value on all OVFs deployed to the same cluster. The value is the URL returned from https://discovery.etcd.io/new?size=NUM_CONTROLLERS.
 
-Please see https://coreos.com/os/docs/latest/cluster-discovery.html for more information.
-
-This value is ignored if the option to bootstrap a cluster is enabled.</Description>
+Please see https://coreos.com/os/docs/latest/cluster-discovery.html for more information.</Description>
       </Property>
       <Property ovf:qualifiers="MinLen(1)" ovf:userConfigurable="true" ovf:value="-----BEGIN CERTIFICATE-----MIID3TCCAsWgAwIBAgIJANsDH22NZ8IzMA0GCSqGSIb3DQEBBQUAMIGKMQswCQYDVQQGEwJVUzETMBEGA1UECAwKQ2FsaWZvcm5pYTESMBAGA1UEBwwJUGFsbyBBbHRvMQ8wDQYDVQQKDAZWTXdhcmUxDDAKBgNVBAsMA0NOWDEUMBIGA1UEAwwLQ05YIENJQ0QgQ0ExHTAbBgkqhkiG9w0BCQEWDmNueEB2bXdhcmUuY29tMCAXDTE4MTAxNTIyNTYxOFoYDzIxMTgwOTIxMjI1NjE4WjCBijELMAkGA1UEBhMCVVMxEzARBgNVBAgMCkNhbGlmb3JuaWExEjAQBgNVBAcMCVBhbG8gQWx0bzEPMA0GA1UECgwGVk13YXJlMQwwCgYDVQQLDANDTlgxFDASBgNVBAMMC0NOWCBDSUNEIENBMR0wGwYJKoZIhvcNAQkBFg5jbnhAdm13YXJlLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALaDsZAy/Fch9kMkYQebVhwriEN7guIzM5KvMtcdsORWVZos9FjzvSSjYFt/Inpx7m00E0KYr5CgMNfL1wnizJSoYZyWbMIUguXE2cJEP1DDka635GthFjYQ7Xm1AjEaJQdKeZJ0tIVWpOZncuxrVUSJgUcx6Cv9nj7IJsPlT7Ibn/WLa2Xxa2mM6LwXLAQyAbFaGgZ1NKZIrSlNnLYGJeP5gW10qYAqxI7WakeRULKKlFn2NPEtQlgFMb/Vls+qWQGoWOtiO0a5LgBXkRqe6U0Kc6fmWTrlb8r0D9sWj45GHjb3xPtmYL5c/JoM+Qs8bgirT/VyfB6qMN7vkDKeaNkCAwEAAaNCMEAwDwYDVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMCAYYwHQYDVR0OBBYEFOImIlsiEFumSEW6u32Rlwn0at6CMA0GCSqGSIb3DQEBBQUAA4IBAQB+DooX+dV6vVCRfezyfME7J6uevFQ1Zne/Oy5JfQ/dUx8rHM+Xdz5lbrOUUgZ9U67a/elehxJBny3WUUTf5rWRRGsCEHBkrZblfmDrz8q7C2/5IYchjjcoqyyNfrjucGVE+s3YjwHOTMf7PaAKOmi2BtqctwxqGH0kv/b6MbIgyKy9SYGteAIwrF7d0CenGN8CVzVvLb7j+PznJPvK/+SYvDDiRfwpwvkH8STCzfqqi1R/ewBG7d9z9IdfVMaOKt/+d4KXPYVm/ttgLgyYGbNNm6h9ZAMXcrYhOWxP372pJZCC3caSOfDIAcwiVpqGyVW44enD/MsGBEURuGEV1wwH-----END CERTIFICATE----------BEGIN RSA PRIVATE KEY-----MIIEpQIBAAKCAQEAtoOxkDL8VyH2QyRhB5tWHCuIQ3uC4jMzkq8y1x2w5FZVmiz0WPO9JKNgW38ienHubTQTQpivkKAw18vXCeLMlKhhnJZswhSC5cTZwkQ/UMORrrfka2EWNhDtebUCMRolB0p5knS0hVak5mdy7GtVRImBRzHoK/2ePsgmw+VPshuf9YtrZfFraYzovBcsBDIBsVoaBnU0pkitKU2ctgYl4/mBbXSpgCrEjtZqR5FQsoqUWfY08S1CWAUxv9WWz6pZAahY62I7RrkuAFeRGp7pTQpzp+ZZOuVvyvQP2xaPjkYeNvfE+2Zgvlz8mgz5CzxuCKtP9XJ8Hqow3u+QMp5o2QIDAQABAoIBAQCey53l1DZwqP/WEwTI1YHqKIX6ELAjlmC8suoM96w8PlFkPtCpxAdApVTkxox89Dt5j+FiA+5casOUPanu1AEjJg0nbElb4vSwbMD5oN9lqYJK/XwjYOkuSTQUvEQX7KNi4I09u4SEronyXPdEc25Qn0J3axiRjavs+7+emRjp4F6huVn8fQZW5/hhXg5b7ehvZKdNX94PaDajWA59u6YisilbyDzx0hCCRa6TjC/6MRAURGGThlMcKZDG5gT2TNZofDI1UFhrFFiArX8YOZBwxi7qse5+++04eBDbKGUs0iLXtlIQAGFOsAqpw3/TLm4qFWyZoOG8REK7UXBnO3zBAoGBAOHGlxTTZFOH/DzzB4qviALa8p1M8xFrR3uL23oDE5mQFMgljm6SvmDRkn8nmqbFbSB4i6B9HryEF9/eyrqYa/SLcezaMnbpwWQJgGv3oCFgALovJQZVhL+zpZZDKsTRC2d7VpXUfUkE4EmHh9blw8Qo/8cT/ssY7SavWifiOEI9AoGBAM7yhhdwj1fnZCw8wegUJ8/VgF2hEgZI0pT//ZgIVL8WD4TVPpC5dKPeNaM2iwWhUzXmPsCq+X/WIgYucw6ENMyiPEO5rkcWIr9vlctxlEP0n2kxWRGYKalongsrX6Q2ZjFvkdbtyooJCaaMDeGOH76T4vX7xch9Od/lLiooArbNAoGBAL4vcXkDkVGkDWCyQDodHu94zEKhXWfg/Lgf2ePvz4TeEAOBT3fpeSFJqKQgEnBFgmWF5ehtPYUDqLDWleOVHetDw9YG/9eXlWbVci6Ay40Rt8seh4vMYiSyCdyH+/ELPxYOmaNg+aCW0PBfkJf/uGb3Om7ScyFWf/7EW6eZMlbpAoGAUzWCowQYLsEULxFS6izIgTGYRo1QAQTg3xY68hlPcfG91awkVu6qroTXTkPNDDt8iKyGSNO2NCd2UMP2cTzJOgp1bsnHAEAvQofsU/vcIKLIQfScmo1zGvG8skMDVrSkzHXOzvuXt37AyZ2Aq1OJAgjWdg+AzAdF8PdmY37o8HUCgYEAxVH1KCshoCZ9VEKlNtc2LPLFHEzbgt9ABpT8PBs1D65hH73v6/ZwbEp/x9KCTlP6GZ7bec/rGq/b7o1jbn7LVgcTQJ2fkYLqUoeu0yOfAo6XfjvVVhtnkCt/lMrx//WIxMFUcQOSoLpprm+MAOQAFZi5JkpX/x9gez0a02fLaZQ=-----END RSA PRIVATE KEY-----" ovf:type="string" ovf:key="TLS_CA_PEM">
         <Label>x509 CA Certificate/Key Pair</Label>
@@ -183,12 +177,10 @@ This CA is used to sign the certificates generated for the Kubernetes cluster.</
         <Label>Install Kubernetes e2e Conformance Tests</Label>
         <Description>A flag that indicates whether to install the Kubernetes e2e conformance test package onto the host. This is useful for nodes that may wish to schedule the test workloads.</Description>
       </Property>
-      <Category>vSphere</Category>
+      <Category>Cloud Provider</Category>
       <Property ovf:userConfigurable="true" ovf:value="vcenter.sddc-54-70-161-229.vmc.vmware.com" ovf:type="string" ovf:key="VSPHERE_SERVER">
         <Label>vSphere Server</Label>
-        <Description>The IP address or FQDN of the vSphere host that manages the VM.
-
-This field is required if configuring a cloud provider or bootstrapping a cluster.</Description>
+        <Description>The IP address or FQDN of the vSphere host that manages the VM.</Description>
       </Property>
       <Property ovf:qualifiers="MinValue(1) MaxValue(65535)" ovf:userConfigurable="true" ovf:value="443" ovf:type="uint16" ovf:key="VSPHERE_SERVER_PORT">
         <Label>vSphere Server Port</Label>
@@ -196,69 +188,43 @@ This field is required if configuring a cloud provider or bootstrapping a cluste
       </Property>
       <Property ovf:userConfigurable="true" ovf:value="" ovf:type="string" ovf:key="VSPHERE_USER">
         <Label>vSphere Username</Label>
-        <Description>The vSphere account used to configure the cloud provider or bootstrap a cluster.
-
-This field is required if configuring a cloud provider or bootstrapping a cluster.</Description>
+        <Description>The vSphere account to use with the vSphere cloud provider for Kubernetes.</Description>
       </Property>
       <Property ovf:userConfigurable="true" ovf:password="true" ovf:value="" ovf:type="string" ovf:key="VSPHERE_PASSWORD">
         <Label>vSphere Password</Label>
-        <Description>The vSphere account password used to configure the cloud provider or bootstrap a cluster.
-
-This field is required if configuring a cloud provider or bootstrapping a cluster.</Description>
+        <Description>The vSphere account to use with the vSphere cloud provider for Kubernetes.</Description>
       </Property>
       <Property ovf:userConfigurable="true" ovf:value="False" ovf:type="boolean" ovf:key="VSPHERE_SERVER_INSECURE">
         <Label>vSphere TLS Insecure</Label>
         <Description>A flag that indicates whether or not the cloud provider will connect to a vSphere server over TLS if the peer certificate cannot be validated.</Description>
       </Property>
-      <Category>Cluster Mode</Category>
-      <Property ovf:userConfigurable="true" ovf:value="False" ovf:type="boolean" ovf:key="CLONE_MODE">
-        <Label>Bootstrap a cluster</Label>
-        <Description>A flag that indicates whether this OVA will clone itself into the number of requested nodes in order to bootstrap a multi-node Kubernetes cluster.
-
-When bootstrapping a cluster with the OVA, it is not necessary to set the etcd discovery URL as this will be generated automatically during the bootstrap process.
-
-All fields in the "vSphere" section are required when bootstrapping a cluster.</Description>
+      <Property ovf:userConfigurable="true" ovf:value="True" ovf:type="boolean" ovf:key="CLOUD_PROVIDER_EXTERNAL">
+        <Label>External</Label>
+        <Description>A flag that indicates whether or not to use the external cloud provider.</Description>
       </Property>
-      <Property ovf:qualifiers="MinValue(1) MaxValue(5000)" ovf:userConfigurable="true" ovf:value="1" ovf:type="uint16" ovf:key="NUM_BOTH">
-        <Label>Number of Control-Plane Workers</Label>
-        <Description>The number of control plane nodes on which workloads may be scheduled.
-
-All fields in the "vSphere" section are required when bootstrapping a cluster.</Description>
-      </Property>
-      <Property ovf:qualifiers="ValueMap{&quot;1&quot;, &quot;2&quot;, &quot;4&quot;, &quot;8&quot;, &quot;16&quot;, &quot;32&quot;, &quot;64&quot;, &quot;128&quot;}" ovf:userConfigurable="true" ovf:value="2" ovf:type="string" ovf:key="CLONE_NUM_CPUS_CONTROLLERS">
-        <Label>Number of CPUs for Control Plane Nodes</Label>
-        <Description>The number of CPUs for control plane nodes. Control plane nodes on which workloads can be scheduled will use the CPU allocation for worker nodes.
-
-All fields in the "vSphere" section are required when bootstrapping a cluster.</Description>
-      </Property>
-      <Property ovf:qualifiers="ValueMap{&quot;1&quot;, &quot;2&quot;, &quot;4&quot;, &quot;8&quot;, &quot;16&quot;, &quot;32&quot;, &quot;64&quot;, &quot;128&quot;}" ovf:userConfigurable="true" ovf:value="8" ovf:type="string" ovf:key="CLONE_NUM_CPUS_WORKERS">
-        <Label>Number of CPUs for Worker Nodes</Label>
-        <Description>The number of CPUs for worker nodes.
-
-All fields in the "vSphere" section are required when bootstrapping a cluster.</Description>
-      </Property>
-      <Property ovf:qualifiers="ValueMap{&quot;2&quot;, &quot;4&quot;, &quot;8&quot;, &quot;16&quot;, &quot;32&quot;, &quot;64&quot;, &quot;128&quot;}" ovf:userConfigurable="true" ovf:value="8" ovf:type="string" ovf:key="CLONE_MEM_GB_CONTROLLERS">
-        <Label>Memory (GiB) for Control Plane Nodes</Label>
-        <Description>The memory (GiB) for control plane nodes. Control plane nodes on which workloads can be scheduled will use the memory allocation for worker nodes.
-
-All fields in the "vSphere" section are required when bootstrapping a cluster.</Description>
-      </Property>
-      <Property ovf:qualifiers="ValueMap{&quot;2&quot;, &quot;4&quot;, &quot;8&quot;, &quot;16&quot;, &quot;32&quot;, &quot;64&quot;, &quot;128&quot;}" ovf:userConfigurable="true" ovf:value="16" ovf:type="string" ovf:key="CLONE_MEM_GB_WORKERS">
-        <Label>Memory (GiB) for Worker Nodes</Label>
-        <Description>The memory (GiB) for worker nodes.
-
-All fields in the "vSphere" section are required when bootstrapping a cluster.</Description>
-      </Property>
-      <Category>Cloud Provider</Category>
-      <Property ovf:qualifiers="ValueMap{&quot;None&quot;, &quot;In-tree&quot;, &quot;External&quot;}" ovf:userConfigurable="true" ovf:value="None" ovf:type="string" ovf:key="CLOUD_PROVIDER_TYPE">
-        <Label>Cloud Provider Type</Label>
-        <Description>The type of vSphere cloud provider to use.
-
-All fields in the "vSphere" section are required when using any type of cloud provider.</Description>
-      </Property>
-      <Property ovf:qualifiers="MinLen(1)" ovf:userConfigurable="true" ovf:value="gcr.io/cloud-provider-vsphere/vsphere-cloud-controller-manager:latest" ovf:type="string" ovf:key="CLOUD_PROVIDER_IMAGE">
+      <Property ovf:userConfigurable="true" ovf:value="gcr.io/cloud-provider-vsphere/vsphere-cloud-controller-manager:latest" ovf:type="string" ovf:key="CLOUD_PROVIDER_IMAGE">
         <Label>Cloud Provider Image</Label>
         <Description>The image to use when an external cloud provider has been selected.</Description>
+      </Property>
+      <Property ovf:userConfigurable="true" ovf:value="SDDC-Datacenter" ovf:type="string" ovf:key="VSPHERE_DATACENTER">
+        <Label>vSphere Datacenter</Label>
+        <Description>The datacenter where VMs are created.</Description>
+      </Property>
+      <Property ovf:userConfigurable="true" ovf:value="Compute-ResourcePool" ovf:type="string" ovf:key="VSPHERE_RESOURCE_POOL">
+        <Label>vSphere Resource Pool</Label>
+        <Description>The resource pool where VMs are created.</Description>
+      </Property>
+      <Property ovf:userConfigurable="true" ovf:value="Workloads" ovf:type="string" ovf:key="VSPHERE_FOLDER">
+        <Label>vSphere Folder</Label>
+        <Description>The folder where VMs are created.</Description>
+      </Property>
+      <Property ovf:userConfigurable="true" ovf:value="WorkloadDatastore" ovf:type="string" ovf:key="VSPHERE_DATASTORE">
+        <Label>vSphere Datastore</Label>
+        <Description>The datastore where VMs are created.</Description>
+      </Property>
+      <Property ovf:userConfigurable="true" ovf:value="sddc-cgw-network-3" ovf:type="string" ovf:key="VSPHERE_NETWORK">
+        <Label>vSphere Network</Label>
+        <Description>The name of the vSphere network to which the VM is connected.</Description>
       </Property>
       <Category>Logging</Category>
       <Property ovf:qualifiers="MinValue(1) MaxValue(10)" ovf:userConfigurable="true" ovf:value="2" ovf:type="uint8" ovf:key="LOG_LEVEL_KUBERNETES">
