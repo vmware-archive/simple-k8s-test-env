@@ -163,6 +163,9 @@ scp_to /var/lib/yakity/ \
   "${script_dir}/../yakity-update.sh" \
   "${script_dir}/../yakity-vsphere.sh" \
   "${script_dir}/../yakity.service" \
+  "${script_dir}/new-ca.sh" \
+  "${script_dir}/new-cert.sh" \
+  "${script_dir}/new-kubeconfig.sh" \
   "${script_dir}/../kube-update/kube-update.sh" \
   "${script_dir}/../kube-update/kube-update.service"
 scp_to /var/lib/yakity/yakity-sysprep.sh \
