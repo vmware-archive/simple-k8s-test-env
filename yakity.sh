@@ -1258,8 +1258,10 @@ EOF
   fi
 
   cp -f /etc/sysconfig/iptables /etc/sysconfig/ip6tables
-  cp -f /etc/sysconfig/iptables /etc/systemd/scripts/ip4save
-  cp -f /etc/sysconfig/iptables /etc/systemd/scripts/ip6save
+  if [ -d /etc/systemd/scripts ]; then
+    cp -f /etc/sysconfig/iptables /etc/systemd/scripts/ip4save
+    cp -f /etc/sysconfig/iptables /etc/systemd/scripts/ip6save
+  fi
   if systemctl is-enabled iptables.service >/dev/null 2>&1; then
     debug "restarting iptables.service"
     systemctl -l restart iptables.service || \
