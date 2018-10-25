@@ -1017,6 +1017,10 @@ configure_iptables() {
 :INPUT DROP [0:0]
 :FORWARD ACCEPT [0:0]
 :OUTPUT ACCEPT [0:0]
+# Allow all outgoing packets.
+-P OUTPUT ACCEPT
+# Allow packet fowarding.
+-P FORWARD ACCEPT
 # Allow all incoming packets.
 -A INPUT -j ACCEPT
 # Enable the rules.
@@ -1064,6 +1068,9 @@ EOF
 
 # Allow all outgoing packets.
 -P OUTPUT ACCEPT
+
+# Allow packet fowarding.
+-P FORWARD ACCEPT
 
 # Drop everything else.
 -P INPUT DROP
@@ -1121,6 +1128,9 @@ EOF
 
 # Allow all outgoing packets.
 -P OUTPUT ACCEPT
+
+# Allow packet fowarding.
+-P FORWARD ACCEPT
 
 # Drop everything else.
 -P INPUT DROP
@@ -1192,6 +1202,9 @@ EOF
 # Allow all outgoing packets.
 -P OUTPUT ACCEPT
 
+# Allow packet fowarding.
+-P FORWARD ACCEPT
+
 # Drop everything else.
 -P INPUT DROP
 
@@ -1233,6 +1246,9 @@ EOF
 # Allow all outgoing packets.
 -P OUTPUT ACCEPT
 
+# Allow packet fowarding.
+-P FORWARD ACCEPT
+
 # Drop everything else.
 -P INPUT DROP
 
@@ -1242,6 +1258,8 @@ EOF
   fi
 
   cp -f /etc/sysconfig/iptables /etc/sysconfig/ip6tables
+  cp -f /etc/sysconfig/iptables /etc/systemd/scripts/ip4save
+  cp -f /etc/sysconfig/iptables /etc/systemd/scripts/ip6save
   if systemctl is-enabled iptables.service >/dev/null 2>&1; then
     debug "restarting iptables.service"
     systemctl -l restart iptables.service || \
