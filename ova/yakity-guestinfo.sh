@@ -53,14 +53,6 @@ write_config_val() {
   fi
 }
 
-# Check to see if there is an SSH public key to add to the root user.
-if val="$(get_config_val SSH_PUB_KEY)" && [ -n "${val}" ]; then
-  mkdir -p /root/.ssh; chmod 0700 /root/.ssh
-  echo >>/root/.ssh/authorized_keys; chmod 0400 /root/.ssh/authorized_keys
-  echo "${val}" >>/root/.ssh/authorized_keys
-  echo2 "updated /root/.ssh/authorized_keys"
-fi
-
 # Get the PEM-encoded CA.
 if val="$(get_config_val TLS_CA_PEM)" && [ -n "${val}" ]; then
   pem="$(mktemp)"

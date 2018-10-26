@@ -1324,7 +1324,7 @@ install_ca_files() {
       { error "failed to write CA key"; return; }
   fi
 
-  mkdir -p /etc/ssl/certs
+  mkdir -p /etc/ssl/certs; chmod 0755 /etc/ssl/certs;
   rm -f /etc/ssl/certs/yakity-ca.crt
   ln -s "${TLS_CA_CRT}" /etc/ssl/certs/yakity-ca.crt
   debug "linked ${TLS_CA_CRT} to /etc/ssl/certs/yakity-ca.crt"

@@ -109,6 +109,7 @@ TLS_KEY="$(mktemp)"; export TLS_KEY
 TLS_COMMON_NAME="admin" \
   TLS_CRT_OUT="${TLS_CRT}" \
   TLS_KEY_OUT="${TLS_KEY}" \
+  TLS_PLAIN_TEXT=true \
   ./new-cert.sh >/dev/null 2>&1
 
 # Generate a new kubeconfig for the K8s admin user.

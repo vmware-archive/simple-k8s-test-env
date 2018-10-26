@@ -1,5 +1,6 @@
 all: build
 
+LINUX_DISTRO ?= photon
 OVF_EXPORT_DIR ?= $(HOME)/Downloads
 
 govc: govc-linux-amd64
@@ -15,9 +16,9 @@ prep-centos prep-photon: govc-linux-amd64
 seal-centos seal-photon: govc-linux-amd64
 	LINUX_DISTRO=$(subst seal-,,$@) hack/prep.sh seal
 
-prep: prep-centos prep-photon
+prep: prep-$(LINUX_DISTRO)
 
-seal: seal-centos seal-photon
+seal: seal-$(LINUX_DISTRO)
 
 %-1.vmdk: $(OVF_EXPORT_DIR)/%-1.vmdk
 	cp -f $? $@

@@ -25,6 +25,12 @@ ExecStartPre=/bin/sh -c '/var/lib/yakity/yakity-sethostname.sh 2>&1 | tee /var/l
 # Get information about the vSphere platform and select the cloud provider.
 ExecStartPre=/bin/sh -c '/var/lib/yakity/yakity-vsphere.sh 2>&1 | tee /var/log/yakity/vsphere.log'
 
+# Generate a self-signed CA if one is unavailable.
+ExecStartPre=/bin/sh -c '/var/lib/yakity/yakity-newca.sh 2>&1 | tee /var/log/yakity/newca.log'
+
+# Generate an SSH key pair if one is not available.
+ExecStartPre=/bin/sh -c '/var/lib/yakity/yakity-ssh.sh 2>&1 | tee /var/log/yakity/ssh.log'
+
 # See if the OVA was deployed to bootstrap a multi-node cluster.
 ExecStartPre=/bin/sh -c '/var/lib/yakity/yakity-clone.sh 2>&1 | tee /var/log/yakity/clone.log'
 
@@ -45,6 +51,10 @@ ExecStartPre=/bin/sh -c '/var/lib/yakity/yakity-guestinfo.sh 2>&1 | tee /var/log
 
 # The yakity script is responsible for turning up the Kubernetes cluster.
 ExecStart=/bin/sh -c '/var/lib/yakity/yakity.sh 2>&1 | tee /var/log/yakity.log'
+
+# This command sets the CA public certificate as a PEM-encoded value to
+# the guestinfo property yakity.TLS_CA_CRT.
+ExecStartPost=/bin/sh -c '/var/lib/yakity/yakity-setca.sh 2>&1 | tee /var/log/setca.log'
 
 # This command generates a kubeconfig that can be used to access the cluster
 # (if EXTERNAL_FQDN is set) or the control plane nodes. The kubeconfig file

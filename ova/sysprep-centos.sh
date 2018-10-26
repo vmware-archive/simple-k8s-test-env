@@ -13,7 +13,6 @@ yum clean -y all && \
 logrotate -f /etc/logrotate.conf && \
 printf '' >/etc/machine-id && \
 rm -fr /var/lib/cloud/instances && \
-rm -fr /root/.ssh/authorized_keys && \
 rm -f /var/log/*-???????? /var/log/*.gz && \
 rm -f /var/log/dmesg.old && \
 rm -rf /var/log/anaconda && \

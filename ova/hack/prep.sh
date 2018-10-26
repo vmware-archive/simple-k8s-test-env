@@ -63,38 +63,6 @@ if ! VM_IP=$(govc vm.ip -vm.ipath "${GOVC_VM}" -wait 5m); then
   q="${?}"; echo "failed to get VM IP address" 2>&1; exit "${q}"
 fi
 
-MYTEMP=$(mktemp -d)
-
-if [ "${NEW_CA}" = "1" ]; then
-  # Generate a new CA for the cluster.
-  export TLS_CA_CRT="${TLS_CA_CRT:-${MYTEMP}/ca.crt}"
-  export TLS_CA_KEY="${TLS_CA_KEY:-${MYTEMP}/ca.key}"
-  if [ ! -f "${TLS_CA_CRT}" ] || [ ! -f "${TLS_CA_KEY}" ]; then
-    echo "generating x509 self-signed certificate authority..."
-    "${script_dir}"/new-ca.sh >/dev/null 2>&1
-  fi
-
-  # Generate a new cert/key pair for the K8s admin user.
-  export TLS_CRT="${TLS_CRT:-${MYTEMP}/k8s-admin.crt}"
-  export TLS_KEY="${TLS_KEY:-${MYTEMP}/k8s-admin.key}"
-  if [ ! -f "${TLS_CRT}" ] || [ ! -f "${TLS_KEY}" ]; then
-    echo "generating x509 cert/key pair for the k8s admin user..."
-    TLS_COMMON_NAME="admin" \
-      TLS_CRT_OUT="${TLS_CRT}" \
-      TLS_KEY_OUT="${TLS_KEY}" \
-      "${script_dir}"/new-cert.sh >/dev/null 2>&1
-  fi
-
-  # Generate a new kubeconfig for the K8s admin user.
-  export KUBECONFIG=${KUBECONFIG:-kubeconfig}
-  if [ ! -f "${KUBECONFIG}" ]; then
-    echo "generating kubeconfig for the k8s-admin user..."
-    SERVER="https://${VM_IP}:443" \
-      USER="admin" \
-      "${script_dir}"/new-kubeconfig.sh >/dev/null 2>&1
-  fi
-fi
-
 # Ensure the govc program is available.
 echo "make govc..."
 make -C "${script_dir}/.." govc-linux-amd64 1>/dev/null
@@ -159,6 +127,9 @@ scp_to /var/lib/yakity/ \
   "${script_dir}/../yakity-clone.sh" \
   "${script_dir}/../yakity-guestinfo.sh" \
   "${script_dir}/../yakity-kubeconfig.sh" \
+  "${script_dir}/../yakity-newca.sh" \
+  "${script_dir}/../yakity-setca.sh" \
+  "${script_dir}/../yakity-ssh.sh" \
   "${script_dir}/../yakity-sethostname.sh" \
   "${script_dir}/../yakity-update.sh" \
   "${script_dir}/../yakity-vsphere.sh" \
