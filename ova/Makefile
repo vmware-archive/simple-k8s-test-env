@@ -10,15 +10,20 @@ govc-linux-amd64:
 	go build -a -tags netgo -ldflags "-w" \
 	-o $@ github.com/vmware/govmomi/govc
 
-prep-centos prep-photon: govc-linux-amd64
-	LINUX_DISTRO=$(subst prep-,,$@) hack/prep.sh
+turn-up-$(LINUX_DISTRO): prep-$(LINUX_DISTRO)
+prep-$(LINUX_DISTRO): govc-linux-amd64
+	LINUX_DISTRO=$(LINUX_DISTRO) hack/prep.sh
 
-seal-centos seal-photon: govc-linux-amd64
-	LINUX_DISTRO=$(subst seal-,,$@) hack/prep.sh seal
+seal-$(LINUX_DISTRO): govc-linux-amd64
+	LINUX_DISTRO=$(LINUX_DISTRO) hack/prep.sh seal
 
-prep: prep-$(LINUX_DISTRO)
+turn-down-$(LINUX_DISTRO):
+	LINUX_DISTRO=$(LINUX_DISTRO) hack/turn-down.sh
 
+prep turn-up: prep-$(LINUX_DISTRO)
 seal: seal-$(LINUX_DISTRO)
+turn-up: prep-$(LINUX_DISTRO)
+turn-down: turn-down-$(LINUX_DISTRO)
 
 %-1.vmdk: $(OVF_EXPORT_DIR)/%-1.vmdk
 	cp -f $? $@
@@ -26,23 +31,24 @@ seal: seal-$(LINUX_DISTRO)
 %-2.nvram: $(OVF_EXPORT_DIR)/%-2.nvram
 	cp -f $? $@
 
+yakity-%.ovf: ovf/%.ovf ovf/product-section.ovf
+	@rm -fr $@
+	cat $^ >>$@
+	printf '\n  </VirtualSystem>\n</Envelope>' >> $@
+
 yakity-%.ova: yakity-%.ovf yakity-%-1.vmdk yakity-%-2.nvram
 	tar -cf $@ $^
 
-build ova: yakity-centos.ova yakity-photon.ova
+ova: build
+build: yakity-$(LINUX_DISTRO).ova
 
-upload-centos: yakity-centos.ova
+upload: upload-$(LINUX_DISTRO)
+
+upload-%: yakity-%.ova
 	aws s3 cp $< s3://cnx.vmware/cicd/$< \
 	  --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers && \
 	  echo https://s3-us-west-2.amazonaws.com/cnx.vmware/cicd/$<
 
-upload-photon: yakity-photon.ova
-	aws s3 cp $< s3://cnx.vmware/cicd/$< \
-	  --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers && \
-	  echo https://s3-us-west-2.amazonaws.com/cnx.vmware/cicd/$<
-
-.PHONY: prep seal upload \
-		prep-centos seal-centos upload-centos \
-		prep-photon seal-photon upload-photon
+.PHONY: prep seal turn-up turn-down upload
 
 .PRECIOUS: %-1.vmdk %-2.nvram

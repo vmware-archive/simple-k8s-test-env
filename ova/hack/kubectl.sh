@@ -3,7 +3,8 @@
 # posix compliant
 # verified by https://www.shellcheck.net
 
-LINUX_DISTRO="${1:-${LINUX_DISTRO}}"
+script_dir=$(python -c "import os; print(os.path.realpath('$(dirname "${0}")'))")
+
 LINUX_DISTRO="${LINUX_DISTRO:-photon}"
 case "${LINUX_DISTRO}" in
 photon)
@@ -16,9 +17,7 @@ centos)
   echo "invalid target os: ${LINUX_DISTRO}" 1>&2; exit 1
 esac
 
-_uuids=$(govc vm.info -vm.ipath "${GOVC_VM}" -json -e | \
-  jq -r '.VirtualMachines[0].Config.ExtraConfig | .[] | select(.Key == "guestinfo.yakity.CLUSTER_UUIDS") | .Value')
+export KUBECONFIG=kubeconfig
+"${script_dir}/get-kubeconfig.sh" 1>"${KUBECONFIG}"
 
-for _type_and_uuid in ${_uuids}; do
-  echo "${_type_and_uuid}"
-done
+kubectl "${@}"

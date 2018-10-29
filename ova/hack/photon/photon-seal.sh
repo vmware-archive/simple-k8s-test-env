@@ -1,8 +1,9 @@
 #!/bin/sh
 
-printf '' >/etc/machine-id && \
 printf 'changeme\nchangeme' | passwd && \
-rm -f /root/yakity.sh && \
+rm -fr /root/.ssh/authorized_keys && \
+printf '' >/etc/machine-id && \
 rm -fr /var/lib/cloud/instances && \
-rm -fr /root/.ssh/authorized_keys 
-rm -fr /var/log && mkdir -p /var/log
+rm -fr /var/log && mkdir -p /var/log && \
+echo 'clearing history & sealing the VM...' && \
+unset HISTFILE && history -c && rm -fr /root/.bash_history

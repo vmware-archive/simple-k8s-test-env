@@ -9,52 +9,13 @@
 # to disk.
 #
 
-set -e
-set -o pipefail
-
-# Add ${BIN_DIR} to the path
-BIN_DIR="${BIN_DIR:-/opt/bin}"; mkdir -p "${BIN_DIR}"; chmod 0755 "${BIN_DIR}"
-echo "${PATH}" | grep -qF "${BIN_DIR}" || export PATH="${BIN_DIR}:${PATH}"
+# Load the yakity commons library.
+# shellcheck disable=SC1090
+. "$(pwd)/yakity-common.sh"
 
 # Exit the script if the govc environment file already exists.
 govc_env=".govc.env"
 [ ! -f "${govc_env}" ] || exit 0
-
-# echo2 echoes the provided arguments to file descriptor 2, stderr.
-echo2() { echo "${@}" 1>&2; }
-
-# fatal echoes a string to stderr and then exits the program.
-fatal() { exit_code="${2:-${?}}"; echo2 "${1}"; exit "${exit_code}"; }
-
-# Ensure the rpctool program is available.
-command -v rpctool >/dev/null 2>&1 || fatal "failed to find rpctool command"
-
-rpc_set() {
-  rpctool set "yakity.${1}" "${2}" || fatal "rpctool: set yakity.${1} failed"
-}
-
-get_config_val() {
-  val="$(rpctool get "yakity.${1}")" || fatal "rpctool: get yakity.${1} failed"
-  if [ -n "${val}" ]; then
-    printf 'got config val\n  key = %s\n  src = %s\n' \
-      "${1}" "guestinfo.yakity" 1>&2
-    echo "${val}"
-  else
-    val="$(rpctool get.ovf "${1}")" || fatal "rpctool: get.ovf ${1} failed"
-    if [ -n "${val}" ]; then
-      printf 'got config val\n  key = %s\n  src = %s\n' \
-        "${1}" "guestinfo.ovfEnv" 1>&2
-      echo "${val}"
-    fi
-  fi
-}
-
-# ex. VMware-42 30 bd 07 d9 68 0c ae-58 61 e9 3c 47 c1 9e d2
-get_self_uuid() {
-  cut -c8- </sys/class/dmi/id/product_serial | \
-  tr -d ' -' | \
-  sed 's/^\([[:alnum:]]\{1,8\}\)\([[:alnum:]]\{1,4\}\)\([[:alnum:]]\{1,4\}\)\([[:alnum:]]\{1,4\}\)\([[:alnum:]]\{1,12\}\)$/\1-\2-\3-\4-\5/'
-}
 
 get_moref_via_my_vm() {
   type="${1}"
@@ -81,26 +42,21 @@ get_moref_via_my_vm_2() {
 }
 
 # Get all of the vSphere properties.
-vsphere_server="$(get_config_val VSPHERE_SERVER)" || \
-  fatal "failed to get VSPHERE_SERVER"
+vsphere_server="$(rpc_get VSPHERE_SERVER)"
 [ -n "${vsphere_server}" ] || exit 0
-vsphere_server_port="$(get_config_val VSPHERE_SERVER_PORT)" || \
-  fatal "failed to get VSPHERE_SERVER_PORT"
+vsphere_server_port="$(rpc_get VSPHERE_SERVER_PORT)"
 [ -n "${vsphere_server_port}" ] || vsphere_server_port=443
 export GOVC_URL="${vsphere_server}:${vsphere_server_port}"
 
-vsphere_server_insecure="$(get_config_val VSPHERE_SERVER_INSECURE)" || \
-  fatal "failed to get VSPHERE_SERVER_INSECURE"
+vsphere_server_insecure="$(rpc_get VSPHERE_SERVER_INSECURE)"
 [ -n "${vsphere_server_insecure}" ] || vsphere_server_insecure=False
 export GOVC_INSECURE="${vsphere_server_insecure}"
 
-vsphere_username="$(get_config_val VSPHERE_USER)" || \
-  fatal "failed to get VSPHERE_USER"
+vsphere_username="$(rpc_get VSPHERE_USER)"
 [ -n "${vsphere_username}" ] || exit 0
 export GOVC_USERNAME="${vsphere_username}"
 
-vsphere_password="$(get_config_val VSPHERE_PASSWORD)" || \
-  fatal "failed to get VSPHERE_PASSWORD"
+vsphere_password="$(rpc_get VSPHERE_PASSWORD)"
 [ -n "${vsphere_password}" ] || exit 0
 export GOVC_PASSWORD="${vsphere_password}"
 
@@ -143,21 +99,21 @@ rm -f "${self_json}"
 } >"${govc_env}"
 
 # Determine if the vSphere cloud provider should be deployed.
-cloud_provider_type="$(get_config_val CLOUD_PROVIDER_TYPE)"
+cloud_provider_type="$(rpc_get CLOUD_PROVIDER_TYPE)"
 if echo "${cloud_provider_type}" | grep -iq 'none'; then
-  echo "no cloud provider selected"
+  info "no cloud provider selected"
   exit 0
 elif echo "${cloud_provider_type}" | grep -iq 'in-tree'; then
-  echo "configuring in-tree cloud provider"
+  info "configuring in-tree cloud provider"
   cloud_provider_type=in-tree
 elif echo "${cloud_provider_type}" | grep -iq 'external'; then
-  echo "configuring external cloud provider"
+  info "configuring external cloud provider"
   cloud_provider_type=external
 else
   exit 0
 fi
 
-echo "selected cloud provider: ${cloud_provider_type}"
+info "selected cloud provider: ${cloud_provider_type}"
 
 vsphere_datacenter="$(basename "${GOVC_DATACENTER}")"
 vsphere_datastore="$(basename "${GOVC_DATASTORE}")"

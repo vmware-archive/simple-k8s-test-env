@@ -7,25 +7,12 @@
 # Used by the yakity service to update the yakity resources.
 #
 
-set -e
-set -o pipefail
-
-# Add ${BIN_DIR} to the path
-BIN_DIR="${BIN_DIR:-/opt/bin}"; mkdir -p "${BIN_DIR}"; chmod 0755 "${BIN_DIR}"
-echo "${PATH}" | grep -qF "${BIN_DIR}" || export PATH="${BIN_DIR}:${PATH}"
-
-# echo2 echoes the provided arguments to file descriptor 2, stderr.
-echo2() { echo "${@}" 1>&2; }
-
-# fatal echoes a string to stderr and then exits the program.
-fatal() { exit_code="${2:-${?}}"; echo2 "${1}"; exit "${exit_code}"; }
-
-if ! command -v rpctool >/dev/null 2>&1; then
-  fatal "failed to find rpctool command"
-fi
+# Load the yakity commons library.
+# shellcheck disable=SC1090
+. "$(pwd)/yakity-common.sh"
 
 update() {
-  url=$(rpctool get.ovf "${1}" 2>/dev/null) || return 0
+  url="$(rpc_get "${1}")"
   [ -n "${url}" ] || return 0
   curl -sSLo "${2}" "${url}" || return "${?}"
   chmod 0755 "${2}"

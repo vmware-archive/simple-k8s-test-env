@@ -23,10 +23,9 @@ rm -rf /tmp/* && \
 rm -rf /var/tmp/* && \
 rm -f /etc/ssh/*key* && \
 rm -f /root/.bash_history && \
-unset HISTFILE && \
 rm -rf /root/.ssh/ && \
 rm -f /root/anaconda-ks.cfg && \
-rm -rf /var/log/* && \
+rm -rf /var/log && mkdir -p /var/log && \
 echo 'clearing history & sealing the VM...' && \
-history -c && \
+unset HISTFILE && history -c && rm -fr /root/.bash_history && \
 sys-unconfig

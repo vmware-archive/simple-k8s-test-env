@@ -4,7 +4,7 @@
 # verified by https://www.shellcheck.net
 
 LINUX_DISTRO="${1:-${LINUX_DISTRO}}"
-LINUX_DISTRO="${LINUX_DISTRO:-centos}"
+LINUX_DISTRO="${LINUX_DISTRO:-photon}"
 case "${LINUX_DISTRO}" in
 photon)
   GOVC_VM="${GOVC_VM:-${GOVC_FOLDER}/photon2}"

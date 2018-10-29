@@ -8,53 +8,24 @@
 # file by reading properties from the VMware GuestInfo interface.
 #
 
-set -e
-set -o pipefail
-
-# Add ${BIN_DIR} to the path
-BIN_DIR="${BIN_DIR:-/opt/bin}"; mkdir -p "${BIN_DIR}"; chmod 0755 "${BIN_DIR}"
-echo "${PATH}" | grep -qF "${BIN_DIR}" || export PATH="${BIN_DIR}:${PATH}"
-
-# echo2 echoes the provided arguments to file descriptor 2, stderr.
-echo2() { echo "${@}" 1>&2; }
-
-# fatal echoes a string to stderr and then exits the program.
-fatal() { exit_code="${2:-${?}}"; echo2 "${1}"; exit "${exit_code}"; }
-
-if ! command -v rpctool >/dev/null 2>&1; then
-  fatal "failed to find rpctool command"
-fi
+# Load the yakity commons library.
+# shellcheck disable=SC1090
+. "$(pwd)/yakity-common.sh"
 
 YAK_DEFAULTS="${YAK_DEFAULTS:-/etc/default/yakity}"
-
-get_config_val() {
-  val="$(rpctool get "yakity.${1}")" || fatal "rpctool: get yakity.${1} failed"
-  if [ -n "${val}" ]; then
-    printf 'got config val\n  key = %s\n  src = %s\n' \
-      "${1}" "guestinfo.yakity" 1>&2
-    echo "${val}"
-  else
-    val="$(rpctool get.ovf "${1}")" || fatal "rpctool: get.ovf ${1} failed"
-    if [ -n "${val}" ]; then
-      printf 'got config val\n  key = %s\n  src = %s\n' \
-        "${1}" "guestinfo.ovfEnv" 1>&2
-      echo "${val}"
-    fi
-  fi
-}
 
 write_config_val() {
   if [ -n "${2}" ]; then
     printf '%s="%s"\n' "${1}" "${2}" >>"${YAK_DEFAULTS}"
     printf 'set config val\n  key = %s\n' "${1}" 1>&2
-  elif val="$(get_config_val "${1}")" && [ -n "${val}" ]; then
+  elif val="$(rpc_get "${1}")" && [ -n "${val}" ]; then
     printf '%s="%s"\n' "${1}" "${val}" >>"${YAK_DEFAULTS}"
     printf 'set config val\n  key = %s\n' "${1}" 1>&2
   fi
 }
 
 # Get the PEM-encoded CA.
-if val="$(get_config_val TLS_CA_PEM)" && [ -n "${val}" ]; then
+if val="$(rpc_get TLS_CA_PEM)" && [ -n "${val}" ]; then
   pem="$(mktemp)"
   echo "${val}" | \
     sed -r 's/(-{5}BEGIN [A-Z ]+-{5})/&\n/g; s/(-{5}END [A-Z ]+-{5})/\n&\n/g' | \

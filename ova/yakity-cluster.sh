@@ -18,52 +18,9 @@
 # them the power signal.
 #
 
-set -e
-set -o pipefail
-
-# Add ${BIN_DIR} to the path
-BIN_DIR="${BIN_DIR:-/opt/bin}"; mkdir -p "${BIN_DIR}"; chmod 0755 "${BIN_DIR}"
-echo "${PATH}" | grep -qF "${BIN_DIR}" || export PATH="${BIN_DIR}:${PATH}"
-
-# If there is a done file then do not re-run this script.
-done_file=".$(basename "${0}").done"
-[ ! -f "${done_file}" ] || exit 0
-
-# echo2 echoes the provided arguments to file descriptor 2, stderr.
-echo2() { echo "${@}" 1>&2; }
-
-# fatal echoes a string to stderr and then exits the program.
-fatal() { exit_code="${2:-${?}}"; echo2 "${1}"; exit "${exit_code}"; }
-
-# Ensure the rpctool program is available.
-command -v rpctool >/dev/null 2>&1 || fatal "failed to find rpctool command"
-
-rpc_set() {
-  rpctool set "yakity.${1}" "${2}" || fatal "rpctool: set yakity.${1} failed"
-}
-
-get_config_val() {
-  val="$(rpctool get "yakity.${1}")" || fatal "rpctool: get yakity.${1} failed"
-  if [ -n "${val}" ]; then
-    printf 'got config val\n  key = %s\n  src = %s\n' \
-      "${1}" "guestinfo.yakity" 1>&2
-    echo "${val}"
-  else
-    val="$(rpctool get.ovf "${1}")" || fatal "rpctool: get.ovf ${1} failed"
-    if [ -n "${val}" ]; then
-      printf 'got config val\n  key = %s\n  src = %s\n' \
-        "${1}" "guestinfo.ovfEnv" 1>&2
-      echo "${val}"
-    fi
-  fi
-}
-
-# ex. VMware-42 30 bd 07 d9 68 0c ae-58 61 e9 3c 47 c1 9e d2
-get_self_uuid() {
-  cut -c8- </sys/class/dmi/id/product_serial | \
-  tr -d ' -' | \
-  sed 's/^\([[:alnum:]]\{1,8\}\)\([[:alnum:]]\{1,4\}\)\([[:alnum:]]\{1,4\}\)\([[:alnum:]]\{1,4\}\)\([[:alnum:]]\{1,12\}\)$/\1-\2-\3-\4-\5/'
-}
+# Load the yakity commons library.
+# shellcheck disable=SC1090
+. "$(pwd)/yakity-common.sh"
 
 get_vm_uuid() {
   govc vm.info -vm.ipath "${1}" -json | jq -r '.VirtualMachines[0].Config.Uuid'
@@ -88,6 +45,7 @@ set_guestinfo() {
     -e "guestinfo.yakity.${_key}=${_val}" || \
     fatal "failed to set guestinfo.yakity.${_key} on ${_vm_uuid}"
 }
+
 
 power_on_vm() {
   govc vm.power -on -vm.uuid "${1}" || fatal "failed to power on ${1}"
@@ -138,7 +96,9 @@ EOF
   # Update the clone's guestinfo to tell the clone that it has in fact
   # been cloned. This will cause this script to sysprep the clone when
   # it first boots.
-  set_guestinfo "${_clone_uuid}" CLONE_MODE cloned
+  set_guestinfo "${_clone_uuid}" SYSPREP              "true"
+  set_guestinfo "${_clone_uuid}" BOOTSTRAP_CLUSTER    "false"
+  set_guestinfo "${_clone_uuid}" CREATE_LOAD_BALANCER "false"
 
   # Power on the clone so it can sysprep itself. The clone will power itself
   # off once the sysprep operation has completed.
@@ -149,28 +109,22 @@ EOF
     fatal "failed to wait for ${_clone_ipath} to be powered off"
 
   # Update the clone's guestinfo with all of the config properties.
-  set_guestinfo "${_clone_uuid}" NODE_TYPE      "${_clone_node_type}"
-  set_guestinfo "${_clone_uuid}" HOST_FQDN      "${_clone_fqdn}"
-  set_guestinfo "${_clone_uuid}" CLONE_MODE     "disabled"
-  set_guestinfo "${_clone_uuid}" SSH_PUB_KEY    "${SSH_PUB_KEY}"
-  set_guestinfo "${_clone_uuid}" ETCD_DISCOVERY "${ETCD_DISCOVERY}"
+  set_guestinfo "${_clone_uuid}" NODE_TYPE         "${_clone_node_type}"
+  set_guestinfo "${_clone_uuid}" HOST_FQDN         "${_clone_fqdn}"
+  set_guestinfo "${_clone_uuid}" SSH_PUB_KEY       "${SSH_PUB_KEY}"
+  set_guestinfo "${_clone_uuid}" ETCD_DISCOVERY    "${ETCD_DISCOVERY}"
 
   # Iterate over the configuration keys to set on the new VM.
   while IFS= read -r _key; do
-    if _val="$(get_config_val "${_key}")" && [ -n "${_val}" ]; then
+    if _val="$(rpc_get "${_key}")" && [ -n "${_val}" ]; then
       set_guestinfo "${_clone_uuid}" "${_key}" "${_val}"
     fi
   done <yakity-config-keys.env
 }
 
-create_cluster() {
-  echo "create cluster"
-
+bootstrap_cluster() {
   govc_env="$(pwd)/.govc.env"
-  if [ ! -f "${govc_env}" ]; then
-    echo2 "failed to clone system; ${govc_env} is missing"
-    exit 1
-  fi
+  [ -f "${govc_env}" ] || fatal "${govc_env} is missing"
 
   # Load the govc config into this script's process
   # shellcheck disable=SC1090
@@ -187,37 +141,40 @@ create_cluster() {
   self_name="$(basename "${GOVC_SELF}")"
   host_name="$(hostname -s)"
   domain_name="$(hostname -d)"
-  self_uuid="$(get_self_uuid)" || fatal "faled to read VM UUID"
+  self_uuid="$(get_self_uuid)"
 
   # The SSH_PUB_KEYS value.
-  SSH_PUB_KEY="$(get_config_val SSH_PUB_KEY)"
+  SSH_PUB_KEY="$(rpc_get SSH_PUB_KEY)"
   export SSH_PUB_KEY
 
   # The type of node being cloned.
-  self_node_type="$(get_config_val NODE_TYPE)"
-  if echo "${self_node_type}" | grep -iq both; then
-    self_node_type=both
-  elif echo "${self_node_type}" | grep -iq controller; then
-    self_node_type=controller
-  elif echo "${self_node_type}" | grep -iq worker; then
-    self_node_type=worker
-  fi
+  self_node_type="$(get_self_node_type)"
 
   # The total number of nodes in the cluster.
-  num_nodes="$(get_config_val NUM_NODES)"
+  num_nodes="$(rpc_get NUM_NODES)"
+  num_nodes="${num_nodes:-1}"
   
   # The number of nodes that are members of the control plane.
-  num_controllers="$(get_config_val NUM_CONTROLLERS)"
+  num_controllers="$(rpc_get NUM_CONTROLLERS)"
+  num_controllers="${num_controllers:-${num_nodes}}"
 
   # The number of controllers on which workloads can be scheduled.
-  num_both="$(get_config_val NUM_BOTH)"
-  [ -n "${num_both}" ] || num_both=0
+  num_both="$(rpc_get NUM_BOTH)"
+  num_both="${num_both:-0}"
   if [ "${num_both}" -gt "${num_controllers}" ]; then
     num_both="${num_controllers}"
   fi
 
   # The number of workers is the number of nodes less the number of controllers.
   num_workers=$((num_nodes-num_controllers))
+
+  # Change this node's type to "controller" if this is a multi-node cluster
+  # and no control plane / worker hybrids were requested.
+  if [ "${num_nodes}" -gt "1" ] && [ "${num_both}" -eq "0" ]; then
+    self_node_type=controller
+    rpc_set NODE_TYPE "${self_node_type}"
+    info "changed node type to 'controller' bc/ 'both' was not requested"
+  fi
 
   # Generate a new etcd discovery URL and set it on this VM.
   ETCD_DISCOVERY="$(curl -sSL "https://discovery.etcd.io/new?size=${num_controllers}")" || \
@@ -226,10 +183,10 @@ create_cluster() {
   export ETCD_DISCOVERY
 
   # Get the number of requested CPUs and amount of memory.
-  num_cpus_ctl="$(get_config_val CLONE_NUM_CPUS_CONTROLLERS)"
-  num_cpus_wrk="$(get_config_val CLONE_NUM_CPUS_WORKERS)"
-  mem_gib_ctl="$(get_config_val CLONE_MEM_GB_CONTROLLERS)"
-  mem_gib_wrk="$(get_config_val CLONE_MEM_GB_WORKERS)"
+  num_cpus_ctl="$(rpc_get CLONE_NUM_CPUS_CONTROLLERS)"
+  num_cpus_wrk="$(rpc_get CLONE_NUM_CPUS_WORKERS)"
+  mem_gib_ctl="$(rpc_get CLONE_MEM_GB_CONTROLLERS)"
+  mem_gib_wrk="$(rpc_get CLONE_MEM_GB_WORKERS)"
   
   num_cpus_ctl="${num_cpus_ctl:-2}"
   num_cpus_wrk="${num_cpus_wrk:-4}"
@@ -389,30 +346,28 @@ EOF
   # Wait on all of the power-on jobs to complete.
   wait || fatal "power-on job(s) failed"
 
-  echo "cluster bootstrap complete!"
+  info "cluster bootstrap complete!"
 }
 
-do_sysprep() {
-  echo "do sysprep"
+# Check to see if the node should be sysprepped. If true then the sysprep
+# script will shutdown the VM and nothing beyond this if block will be
+# executed.
+if is_true "$(rpc_get SYSPREP)"; then
+  info "performing sysprep"
+  rpc_set SYSPREP false
   ./yakity-sysprep.sh
-}
 
-clone_mode="$(get_config_val CLONE_MODE)"
-rpc_set CLONE_MODE disabled
-case "${clone_mode}" in
-1|true|True)
-  create_cluster
-  ;;
-cloned)
-  # The done_file must be created ahead of the sysprep script as the latter
-  # may shut down this VM and prevent the done_file from being created.
-  touch "${done_file}"
-  ./yakity-sysprep.sh
-  ;;
-*)
-  echo "clone disabled"
-  ;;
-esac
+# Check to see if a cluster should be bootstrapped.
+elif is_true "$(rpc_get BOOTSTRAP_CLUSTER)"; then
+  info "bootstrapping cluster"
+  rpc_set BOOTSTRAP_CLUSTER false
+  bootstrap_cluster
 
-touch "${done_file}"
+# If the VM's CLUSTER_UUIDS field is empty then set it to this VM's UUID.
+elif [ -z "$(rpc_get CLUSTER_UUIDS)" ]; then
+  self_type_and_uuid="$(get_self_node_type):$(get_self_uuid)"
+  info "no cluster: assigning ${self_type_and_uuid} to CLUSTER_UUIDS"
+  rpc_set CLUSTER_UUIDS "${self_type_and_uuid}"
+fi
+
 exit 0

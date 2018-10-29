@@ -2,3 +2,4 @@
 /*.nvram
 /*.vmdk
 /govc-linux-amd64
+/yakity-*.ovf

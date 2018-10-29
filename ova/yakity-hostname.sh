@@ -7,30 +7,9 @@
 # Used by the yakity service to update the host's name.
 #
 
-set -e
-set -o pipefail
-
-# Add ${BIN_DIR} to the path
-BIN_DIR="${BIN_DIR:-/opt/bin}"; mkdir -p "${BIN_DIR}"; chmod 0755 "${BIN_DIR}"
-echo "${PATH}" | grep -qF "${BIN_DIR}" || export PATH="${BIN_DIR}:${PATH}"
-
-# echo2 echoes the provided arguments to file descriptor 2, stderr.
-echo2() { echo "${@}" 1>&2; }
-
-# fatal echoes a string to stderr and then exits the program.
-fatal() { exit_code="${2:-${?}}"; echo2 "${1}"; exit "${exit_code}"; }
-
-if ! command -v rpctool >/dev/null 2>&1; then
-  fatal "failed to find rpctool command"
-fi
-
-get_config_val() {
-  if val="$(rpctool get "yakity.${1}" 2>/dev/null)" && [ -n "${val}" ]; then
-    echo "${val}"
-  elif val="$(rpctool get.ovf "${1}" 2>/dev/null)" && [ -n "${val}" ]; then
-    echo "${val}"
-  fi
-}
+# Load the yakity commons library.
+# shellcheck disable=SC1090
+. "$(pwd)/yakity-common.sh"
 
 get_host_name_from_fqdn() {
   echo "${1}" | awk -F. '{print $1}'
@@ -102,7 +81,7 @@ EOF
   return 0
 }
 
-if ! host_fqdn="$(get_config_val HOST_FQDN)"; then
+if ! host_fqdn="$(rpc_get HOST_FQDN)"; then
   fatal "failed to get host name from OVF environment"
 fi
 
@@ -147,9 +126,9 @@ if ! set_host_name "${host_fqdn}" "${host_name}" "${domain_name}"; then
   esac
 fi
 
-echo "host name has been updated!"
-echo "    host fqdn  = ${host_fqdn}"
-echo "    host name  = ${host_name}"
-echo "  domain name  = ${domain_name}"
+info "host name has been updated!"
+info "    host fqdn  = ${host_fqdn}"
+info "    host name  = ${host_name}"
+info "  domain name  = ${domain_name}"
 
 exit 0

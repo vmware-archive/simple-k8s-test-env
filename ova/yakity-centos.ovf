@@ -212,8 +212,189 @@ This field is required if configuring a cloud provider or bootstrapping a cluste
         <Label>vSphere TLS Insecure</Label>
         <Description>A flag that indicates whether or not the cloud provider will connect to a vSphere server over TLS if the peer certificate cannot be validated.</Description>
       </Property>
-      <Category>Cluster Mode</Category>
-      <Property ovf:userConfigurable="true" ovf:value="False" ovf:type="boolean" ovf:key="CLONE_MODE">
+      <Category>Cluster Deployment</Category>
+      <Property ovf:userConfigurable="true" ovf:value="False" ovf:type="boolean" ovf:key="BOOTSTRAP_CLUSTER">
+        <Label>Bootstrap a cluster</Label>
+        <Description>A flag that indicates whether this OVA will clone itself into the number of requested nodes in order to bootstrap a multi-node Kubernetes cluster.
+
+When bootstrapping a cluster with the OVA, it is not necessary to set the etcd discovery URL as this will be generated automatically during the bootstrap process.
+
+All fields in the "vSphere" section are required when bootstrapping a cluster.</Description>
+      </Property>
+      <Property ovf:qualifiers="MinValue(1) MaxValue(5000)" ovf:userConfigurable="true" ovf:value="1" ovf:type="uint16" ovf:key="NUM_BOTH">
+        <Label>Number of Control-Plane Workers</Label>
+        <Description>The number of control plane nodes on which workloads may be scheduled.
+
+All fields in the "vSphere" section are required when bootstrapping a cluster.</Description>
+      </Property>
+      <Property ovf:qualifiers="ValueMap{&quot;1&quot;, &quot;2&quot;, &quot;4&quot;, &quot;8&quot;, &quot;16&quot;, &quot;32&quot;, &quot;64&quot;, &quot;128&quot;}" ovf:userConfigurable="true" ovf:value="2" ovf:type="string" ovf:key="CLONE_NUM_CPUS_CONTROLLERS">
+        <Label>Number of CPUs for Control Plane Nodes</Label>
+        <Description>The number of CPUs for control plane nodes. Control plane nodes on which workloads can be scheduled will use the CPU allocation for worker nodes.
+
+All fields in the "vSphere" section are required when bootstrapping a cluster.</Description>
+      </Property>
+      <Property ovf:qualifiers="ValueMap{&quot;1&quot;, &quot;2&quot;, &quot;4&quot;, &quot;8&quot;, &quot;16&quot;, &quot;32&quot;, &quot;64&quot;, &quot;128&quot;}" ovf:userConfigurable="true" ovf:value="8" ovf:type="string" ovf:key="CLONE_NUM_CPUS_WORKERS">
+        <Label>Number of CPUs for Worker Nodes</Label>
+        <Description>The number of CPUs for worker nodes.
+
+All fields in the "vSphere" section are required when bootstrapping a cluster.</Description>
+      </Property>
+      <Property ovf:qualifiers="ValueMap{&quot;2&quot;, &quot;4&quot;, &quot;8&quot;, &quot;16&quot;, &quot;32&quot;, &quot;64&quot;, &quot;128&quot;}" ovf:userConfigurable="true" ovf:value="8" ovf:type="string" ovf:key="CLONE_MEM_GB_CONTROLLERS">
+        <Label>Memory (GiB) for Control Plane Nodes</Label>
+        <Description>The memory (GiB) for control plane nodes. Control plane nodes on which workloads can be scheduled will use the memory allocation for worker nodes.
+
+All fields in the "vSphere" section are required when bootstrapping a cluster.</Description>
+      </Property>
+      <Property ovf:qualifiers="ValueMap{&quot;2&quot;, &quot;4&quot;, &quot;8&quot;, &quot;16&quot;, &quot;32&quot;, &quot;64&quot;, &quot;128&quot;}" ovf:userConfigurable="true" ovf:value="16" ovf:type="string" ovf:key="CLONE_MEM_GB_WORKERS">
+        <Label>Memory (GiB) for Worker Nodes</Label>
+        <Description>The memory (GiB) for worker nodes.
+
+All fields in the "vSphere" section are required when bootstrapping a cluster.</Description>
+      </Property>
+      <Category>Cloud Provider</Category>
+      <Property ovf:qualifiers="ValueMap{&quot;None&quot;, &quot;In-tree&quot;, &quot;External&quot;}" ovf:userConfigurable="true" ovf:value="None" ovf:type="string" ovf:key="CLOUD_PROVIDER_TYPE">
+        <Label>Cloud Provider Type</Label>
+        <Description>The type of vSphere cloud provider to use.
+
+All fields in the "vSphere" section are required when using any type of cloud provider.</Description>
+      </Property>
+      <Property ovf:qualifiers="MinLen(1)" ovf:userConfigurable="true" ovf:value="gcr.io/cloud-provider-vsphere/vsphere-cloud-controller-manager:latest" ovf:type="string" ovf:key="CLOUD_PROVIDER_IMAGE">
+        <Label>Cloud Provider Image</Label>
+        <Description>The image to use when an external cloud provider has been selected.</Description>
+      </Property>
+      <Category>Logging</Category>
+      <Property ovf:qualifiers="MinValue(1) MaxValue(10)" ovf:userConfigurable="true" ovf:value="2" ovf:type="uint8" ovf:key="LOG_LEVEL_KUBERNETES">
+        <Label>Kubernetes</Label>
+        <Description>The default Kubernetes log level.</Description>
+      </Property>
+      <Property ovf:qualifiers="MinValue(1) MaxValue(10)" ovf:userConfigurable="true" ovf:value="2" ovf:type="uint8" ovf:key="LOG_LEVEL_KUBE_APISERVER">
+        <Label>Kubernetes API Server</Label>
+        <Description>The log level for the Kubernetes API server.</Description>
+      </Property>
+      <Property ovf:qualifiers="MinValue(1) MaxValue(10)" ovf:userConfigurable="true" ovf:value="2" ovf:type="uint8" ovf:key="LOG_LEVEL_KUBE_CONTROLLER_MANAGER">
+        <Label>Kubernetes Controller Manager</Label>
+        <Description>The log level for the Kubernetes controller manager.</Description>
+      </Property>
+      <Property ovf:qualifiers="MinValue(1) MaxValue(10)" ovf:userConfigurable="true" ovf:value="2" ovf:type="uint8" ovf:key="LOG_LEVEL_KUBE_SCHEDULER">
+        <Label>Kubernetes Scheduler</Label>
+        <Description>The log level for the Kubernetes scheduler.</Description>
+      </Property>
+      <Property ovf:qualifiers="MinValue(1) MaxValue(10)" ovf:userConfigurable="true" ovf:value="2" ovf:type="uint8" ovf:key="LOG_LEVEL_KUBELET">
+        <Label>Kubelet</Label>
+        <Description>The log level for the kubelet.</Description>
+      </Property>
+      <Property ovf:qualifiers="MinValue(1) MaxValue(10)" ovf:userConfigurable="true" ovf:value="2" ovf:type="uint8" ovf:key="LOG_LEVEL_KUBE_PROXY">
+        <Label>Kube-Proxy</Label>
+        <Description>The log level for the kube-proxy service.</Description>
+      </Property>
+      <Property ovf:qualifiers="MinValue(1) MaxValue(10)" ovf:userConfigurable="true" ovf:value="2" ovf:type="uint8" ovf:key="LOG_LEVEL_CLOUD_CONTROLLER_MANAGER">
+        <Label>Cloud Controller Manager</Label>
+        <Description>The log level for the cloud controller manager (CCM). This only applies to out-of-tree CCMs.</Description>
+      </Property>
+      <Category>Yakity</Category>
+      <Property ovf:qualifiers="MinValue(300) MaxValue(65535)" ovf:userConfigurable="true" ovf:value="900" ovf:type="uint16" ovf:key="ETCD_LEASE_TTL">
+        <Label>Distributed Config Lease TTL</Label>
+        <Description>The number of seconds of the lease used to control the lifetime of the keys yakity stores in etcd to support discovery and synchronization between nodes when installing a multi-node cluster. The default value is equivalent to 15 minutes.
+
+This value should be sufficiently large to provide enough time for all nodes to discovery one another, but also small enough to ensure any sensitive information stored in the keys is cleaned up in a timely manner.</Description>
+      </Property>
+      <Property ovf:userConfigurable="true" ovf:type="string" ovf:key="YAKITY_GUESTINFO_URL">
+        <Label>Yakity GuestInfo URL</Label>
+        <Description>The URL of the Yakity GuestInfo script to use. This may be set to override the Yakity GuestInfo script built into the OVF.</Description>
+      </Property>
+      <Property ovf:userConfigurable="true" ovf:type="string" ovf:key="YAKITY_URL">
+        <Label>Yakity URL</Label>
+        <Description>The URL of the Yakity script to use. This may be set to override the Yakity script built into the OVF.</Description>
+      </Property>
+    </ProductSection>
+  </VirtualSystem>
+</Envelope>
+
+    <ProductSection>
+      <Info>Information about the installed software</Info>
+      <Product>yakity</Product>
+      <Vendor>VMware Inc.</Vendor>
+      <ProductUrl>https://github.com/akutz/yakity</ProductUrl>
+      <VendorUrl>https://vmware.com</VendorUrl>
+      <Category>Guest OS</Category>
+      <Property ovf:qualifiers="MinLen(3)" ovf:userConfigurable="true" ovf:value="kubernetes.yakity" ovf:type="string" ovf:key="HOST_FQDN">
+        <Label>Host FQDN</Label>
+        <Description>The host's fully qualified domain name (FQDN).</Description>
+      </Property>
+      <Property ovf:qualifiers="MinLen(0)" ovf:userConfigurable="true" ovf:value="" ovf:type="string" ovf:key="SSH_PUB_KEY">
+        <Label>SSH Public Key</Label>
+        <Description>An SSH public key to add to the root user's ".ssh/authorized_keys" file.</Description>
+      </Property>
+      <Category>Kubernetes</Category>
+      <Property ovf:userConfigurable="true" ovf:value="release/stable" ovf:type="string" ovf:key="K8S_VERSION">
+        <Label>Kubernetes Version</Label>
+        <Description>The Kubernetes version to install. Please see https://github.com/akutz/yakity/wiki/Kubernetes-version for valid version strings.</Description>
+      </Property>
+      <Property ovf:qualifiers="ValueMap{&quot;Controller&quot;, &quot;Worker&quot;, &quot;Both&quot;}" ovf:userConfigurable="true" ovf:value="Both" ovf:type="string" ovf:key="NODE_TYPE">
+        <Label>Node Type</Label>
+        <Description>The host can either be a member of the control plane, a worker node, or control plane member that can also schedule workloads.</Description>
+      </Property>
+      <Property ovf:qualifiers="MinValue(1) MaxValue(5000)" ovf:userConfigurable="true" ovf:value="1" ovf:type="uint16" ovf:key="NUM_CONTROLLERS">
+        <Label>Number of Control Plane Nodes</Label>
+        <Description>The number of control plane nodes in the Kubernetes cluster. This number should be the same value as the "size" query parameter given to the etcd discovery service that returns the etcd discovery URL.
+
+This value will be ignored if the option to bootstrap a cluster is not enabled or no etcd discovery URL is specified.</Description>
+      </Property>
+      <Property ovf:qualifiers="MinValue(1) MaxValue(5000)" ovf:userConfigurable="true" ovf:value="1" ovf:type="uint16" ovf:key="NUM_NODES">
+        <Label>Number of Nodes</Label>
+        <Description>The total number of nodes in the Kubernetes cluster. This includes control plane nodes as well as worker nodes.
+
+This value will be ignored if the option to bootstrap a cluster is not enabled or no etcd discovery URL is specified.</Description>
+      </Property>
+      <Property ovf:userConfigurable="true" ovf:type="string" ovf:key="ETCD_DISCOVERY">
+        <Label>etcd Discovery URL</Label>
+        <Description>This value is required and must be set to the same value on all OVFs deployed to the same cluster. The value is the URL returned from https://discovery.etcd.io/new?size=NUM_CONTROLLERS.
+
+Please see https://coreos.com/os/docs/latest/cluster-discovery.html for more information.
+
+This value is ignored if the option to bootstrap a cluster is enabled.</Description>
+      </Property>
+      <Property ovf:userConfigurable="true" ovf:value="" ovf:type="string" ovf:key="TLS_CA_PEM">
+        <Label>x509 CA Certificate/Key Pair</Label>
+        <Description>A PEM-encoded x509 CA certificate and its corresponding PEM-encoded RSA private key.
+
+This CA is used to sign the certificates generated for the Kubernetes cluster.
+
+This value is required unless deploying a single-node cluster or using the bootstrap cluster feature.</Description>
+      </Property>
+      <Property ovf:userConfigurable="true" ovf:value="False" ovf:type="boolean" ovf:key="INSTALL_CONFORMANCE_TESTS">
+        <Label>Install Kubernetes e2e Conformance Tests</Label>
+        <Description>A flag that indicates whether to install the Kubernetes e2e conformance test package onto the host. This is useful for nodes that may wish to schedule the test workloads.</Description>
+      </Property>
+      <Category>vSphere</Category>
+      <Property ovf:userConfigurable="true" ovf:value="vcenter.sddc-54-70-161-229.vmc.vmware.com" ovf:type="string" ovf:key="VSPHERE_SERVER">
+        <Label>vSphere Server</Label>
+        <Description>The IP address or FQDN of the vSphere host that manages the VM.
+
+This field is required if configuring a cloud provider or bootstrapping a cluster.</Description>
+      </Property>
+      <Property ovf:qualifiers="MinValue(1) MaxValue(65535)" ovf:userConfigurable="true" ovf:value="443" ovf:type="uint16" ovf:key="VSPHERE_SERVER_PORT">
+        <Label>vSphere Server Port</Label>
+        <Description>The port on which the vSphere server is listening for incoming connections.</Description>
+      </Property>
+      <Property ovf:userConfigurable="true" ovf:value="" ovf:type="string" ovf:key="VSPHERE_USER">
+        <Label>vSphere Username</Label>
+        <Description>The vSphere account used to configure the cloud provider or bootstrap a cluster.
+
+This field is required if configuring a cloud provider or bootstrapping a cluster.</Description>
+      </Property>
+      <Property ovf:userConfigurable="true" ovf:password="true" ovf:value="" ovf:type="string" ovf:key="VSPHERE_PASSWORD">
+        <Label>vSphere Password</Label>
+        <Description>The vSphere account password used to configure the cloud provider or bootstrap a cluster.
+
+This field is required if configuring a cloud provider or bootstrapping a cluster.</Description>
+      </Property>
+      <Property ovf:userConfigurable="true" ovf:value="False" ovf:type="boolean" ovf:key="VSPHERE_SERVER_INSECURE">
+        <Label>vSphere TLS Insecure</Label>
+        <Description>A flag that indicates whether or not the cloud provider will connect to a vSphere server over TLS if the peer certificate cannot be validated.</Description>
+      </Property>
+      <Category>Cluster Deployment</Category>
+      <Property ovf:userConfigurable="true" ovf:value="False" ovf:type="boolean" ovf:key="BOOTSTRAP_CLUSTER">
         <Label>Bootstrap a cluster</Label>
         <Description>A flag that indicates whether this OVA will clone itself into the number of requested nodes in order to bootstrap a multi-node Kubernetes cluster.
 
