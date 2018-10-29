@@ -32,11 +32,12 @@ turn-down: turn-down-$(LINUX_DISTRO)
 	cp -f $? $@
 
 yakity-%.ovf: ovf/%.ovf ovf/product-section.ovf
-	@rm -fr $@
+	@rm -f $@
 	cat $^ >>$@
 	printf '\n  </VirtualSystem>\n</Envelope>' >> $@
 
 yakity-%.ova: yakity-%.ovf yakity-%-1.vmdk yakity-%-2.nvram
+	@rm -f $@
 	tar -cf $@ $^
 
 ova: build

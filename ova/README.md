@@ -5,8 +5,8 @@ necessary to build the yakity OVA.
 
 ## Supported Linux Distributions
 The yakity OVA comes in a variety of flavors:
+* PhotonOS 2 ([OVA](https://s3-us-west-2.amazonaws.com/cnx.vmware/cicd/yakity-photon.ova))
 * CentOS 7 ([OVA](https://s3-us-west-2.amazonaws.com/cnx.vmware/cicd/yakity-centos.ova))
-* PhotonOS (work-in-progress)
 
 ## Building the OVA
 The OVA is built using a staging VM that lives on a vSphere platform.
@@ -15,7 +15,7 @@ command to interact with the staging VM. Therefore building the OVA has
 the following prerequisites:
 
 1. Access to a vSphere platform
-2. A staging VM based on CentOS or PhotonOS
+2. A staging VM based on PhotonOS 2 or CentOS 7
 3. The [`govc`](https://github.com/vmware/govmomi/tree/master/govc) command.
 
 ## Preparing the staging VM

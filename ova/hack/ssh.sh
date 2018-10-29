@@ -3,24 +3,26 @@
 # posix compliant
 # verified by https://www.shellcheck.net
 
-LINUX_DISTRO="${1:-${LINUX_DISTRO}}"
-LINUX_DISTRO="${LINUX_DISTRO:-centos}"
-case "${LINUX_DISTRO}" in
-photon)
-  GOVC_VM="${GOVC_VM:-${GOVC_FOLDER}/photon2}"
-  ;;
-centos)
-  GOVC_VM="${GOVC_VM:-${GOVC_FOLDER}/yakity-centos}"
-  ;;
-*)
-  echo "invalid target os: ${LINUX_DISTRO}" 1>&2; exit 1
-esac
+vm_ip=$(govc vm.ip -vm.uuid "${1}" -v4 -n ethernet-0)
 
-ssh_prv_key="$(mktemp)"
-govc vm.info -vm.ipath "${GOVC_VM}" -json -e | \
-  jq -r '.VirtualMachines[0].Config.ExtraConfig | .[] | select(.Key == "guestinfo.yakity.SSH_PRV_KEY") | .Value' \
-  >"${ssh_prv_key}"
+mkdir -p "${HOME}/.yakity/ssh"
+chmod 0700 "${HOME}/.yakity/ssh"
+ssh_prv_key="${HOME}/.yakity/ssh/id_rsa"
+curl -sSL http://bit.ly/get-ssh | sh -s -- "${1}" >"${ssh_prv_key}"
+chmod 0600 "${ssh_prv_key}"
 
-vm_ip="$(govc vm.ip -vm.ipath "${GOVC_VM}" -v4 -n ethernet-0)"
-ssh -i "${ssh_prv_key}" \
-    -o ProxyCommand="ssh -W ${vm_ip}:22 $(whoami)@50.112.88.129" "root@${vm_ip}"
+ssh_cmd="ssh -i \"${ssh_prv_key}\""
+if [ -n "${JUMP_HOST}" ]; then
+  ssh_cmd="${ssh_cmd} -o ProxyCommand=\"ssh -W ${vm_ip}:22 ${JUMP_HOST}\""
+fi
+ssh_cmd="${ssh_cmd} root@${vm_ip}"
+
+printf 'log into host with the following command:\n\n  %s\n' "${ssh_cmd}"
+if printf "%s" "${ssh_cmd}" | pbcopy >/dev/null 2>&1; then
+  MOD_KEY="⌘"
+elif printf "%s" "${ssh_cmd}" | xclip -selection clipboard >/dev/null 2>&1; then
+  MOD_KEY="ctl"
+fi
+if [ -n "${MOD_KEY}" ]; then
+  printf '\nthe above command is in the clipboard; use %s-v to paste the command into the terminal.\n' "${MOD_KEY}"
+fi

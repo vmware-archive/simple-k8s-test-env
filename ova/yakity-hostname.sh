@@ -11,87 +11,34 @@
 # shellcheck disable=SC1090
 . "$(pwd)/yakity-common.sh"
 
-get_host_name_from_fqdn() {
-  echo "${1}" | awk -F. '{print $1}'
-}
+# If this is the first node in the cluster the host FQDN must be
+# figured out based on the cluster's shape.
+if is_true "$(rpc_get BOOTSTRAP_CLUSTER)"; then
+  # Get this VM's UUID.
+  self_uuid="$(get_self_uuid)"
 
-get_domain_name_from_fqdn() {
-  echo "${1}" | sed 's~^'"$(get_host_name_from_fqdn "${1}")"'\.\(.\{1,\}\)$~\1~'
-}
+  # Generate a unique ID for the cluster.
+  cluster_id="$(echo "${self_uuid}-$(date --utc '+%s')" | sha1sum | awk '{print $1}')"
+  rpc_set CLUSTER_ID "${cluster_id}"
 
-# Sets the host name and updats all of the files necessary to have the
-# hostname command respond with correct information for "hostname -f",
-# "hostname -s", and "hostname -d".
-#
-# Possible return codes include:
-#   0 - success
-#
-#   50 - after setting the host name the command "hostname -f" returns
-#        an empty string
-#   51 - after setting the host name the command "hostname -f" returns
-#        a value that does not match the host FQDN that was set
-#
-#   52 - after setting the host name the command "hostname -s" returns
-#        an empty string
-#   53 - after setting the host name the command "hostname -s" returns
-#        a value that does not match the host name that was set
-#
-#   54 - after setting the host name the command "hostname -d" returns
-#        an empty string
-#   55 - after setting the host name the command "hostname -d" returns
-#        a value that does not match the domain name that was set
-#
-#    ? - any other non-zero exit code indicates failure and comes directly
-#        from the "hostname" command. Please see the "hostname" command
-#        for a list of its exit codes.
-set_host_name() {
-  _host_fqdn="${1}"; _host_name="${2}"; _domain_name="${3}"
+  # Get the short version of the cluster ID.
+  cluster_id7="$(get_cluster_id7 "${cluster_id}")"
 
-  # Use the "hostname" command instead of "hostnamectl set-hostname" since
-  # the latter relies on the systemd-hostnamed service, which may not be
-  # present or active.
-  hostname "${_host_fqdn}" || return "${?}"
+  # The domain name is generated using the first seven characters from the
+  # cluster ID.
+  domain_name="${cluster_id7}.yakity"
+  rpc_set NETWORK_DOMAIN "${domain_name}"
 
-  # Update the hostname file.
-  echo "${_host_fqdn}" >/etc/hostname
+  # The first node in the cluster is always a member of the control plane, so
+  # the host name will always be c01.
+  host_fqdn="c01.${domain_name}"
 
-  # Update the hosts file so the "hostname" command will respond with
-  # the correct values for "hostname -f", "hostname -s", and "hostname -d".
-  cat <<EOF >/etc/hosts
-::1         ipv6-localhost ipv6-loopback
-127.0.0.1   localhost
-127.0.0.1   localhost.${_domain_name}
-127.0.0.1   ${_host_name}
-127.0.0.1   ${_host_fqdn}
-EOF
-
-  _act_host_fqdn="$(hostname -f)" || return "${?}"
-  [ -n "${_act_host_fqdn}" ] || return 50
-  [ "${_host_fqdn}" = "${_act_host_fqdn}" ] || return 51
-
-  _act_host_name="$(hostname -s)" || return "${?}"
-  [ -n "${_act_host_name}" ] || return 52
-  [ "${_host_name}" = "${_act_host_name}" ] || return 53
-
-  _act_domain_name="$(hostname -d)" || return "${?}"
-  [ -n "${_act_domain_name}" ] || return 54
-  [ "${_domain_name}" = "${_act_domain_name}" ] || return 55
-
-  # success!
-  return 0
-}
-
-if ! host_fqdn="$(rpc_get HOST_FQDN)"; then
-  fatal "failed to get host name from OVF environment"
+  rpc_set HOST_FQDN "${host_fqdn}"
+else
+  host_fqdn="$(rpc_get HOST_FQDN)"
 fi
 
-# Exit with an error if the host's FQDN is empty.
-[ -n "${host_fqdn}" ] || fatal "host name in OVF environment is required" 2
-
-# If the provided FQDN does not include a domain name then append one.
-if ! echo "${host_fqdn}" | grep -q '\.'; then
-  host_fqdn="${host_fqdn}.localdomain"
-fi
+require host_fqdn
 
 # Get the host name and domain name from the host's FQDN.
 host_name="$(get_host_name_from_fqdn "${host_fqdn}")"

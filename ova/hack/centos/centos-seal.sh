@@ -9,7 +9,6 @@ yum clean -y all && \
 logrotate -f /etc/logrotate.conf && \
 printf '' >/etc/machine-id && \
 rm -fr /var/lib/cloud/instances && \
-rm -fr /root/.ssh/authorized_keys && \
 rm -f /var/log/*-???????? /var/log/*.gz && \
 rm -f /var/log/dmesg.old && \
 rm -rf /var/log/anaconda && \
@@ -21,9 +20,7 @@ rm -f /etc/udev/rules.d/70* && \
 sed -i '/^(HWADDR|UUID)=/d' /etc/sysconfig/network-scripts/ifcfg-e* && \
 rm -rf /tmp/* && \
 rm -rf /var/tmp/* && \
-rm -f /etc/ssh/*key* && \
-rm -f /root/.bash_history && \
-rm -rf /root/.ssh/ && \
+rm -rf /etc/ssh/*key* /root/.ssh && \
 rm -f /root/anaconda-ks.cfg && \
 rm -rf /var/log && mkdir -p /var/log && \
 echo 'clearing history & sealing the VM...' && \

@@ -131,15 +131,7 @@ scp_to /var/lib/yakity/ \
   "${script_dir}/../../yakity.sh" \
   "${script_dir}/../yakity.service" \
   "${script_dir}/../yakity-config-keys.env" \
-  "${script_dir}/../yakity-ca.sh" \
-  "${script_dir}/../yakity-cluster.sh" \
-  "${script_dir}/../yakity-common.sh" \
-  "${script_dir}/../yakity-guestinfo.sh" \
-  "${script_dir}/../yakity-hostname.sh" \
-  "${script_dir}/../yakity-kubeconfig.sh" \
-  "${script_dir}/../yakity-load-balancer.sh" \
-  "${script_dir}/../yakity-ssh.sh" \
-  "${script_dir}/../yakity-vsphere.sh" \
+  "${script_dir}/../"*.sh \
   "${script_dir}/new-ca.sh" \
   "${script_dir}/new-cert.sh" \
   "${script_dir}/new-kubeconfig.sh" \

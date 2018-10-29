@@ -13,6 +13,9 @@
 # shellcheck disable=SC1090
 . "$(pwd)/yakity-common.sh"
 
+_done_file="$(pwd)/.$(basename "${0}").done"
+[ ! -f "${_done_file}" ] || exit 0
+
 # Do not create the load balancer unless requested.
 if is_false "$(rpc_get CREATE_LOAD_BALANCER)"; then
   info "load balancer creation disabled"
@@ -34,6 +37,13 @@ require AWS_ACCESS_KEY_ID \
 export  AWS_ACCESS_KEY_ID \
         AWS_SECRET_ACCESS_KEY \
         AWS_DEFAULT_REGION
+
+# Get the cluster ID.
+cluster_id="$(rpc_get CLUSTER_ID)"
+require cluster_id
+
+# Get the short version of the cluster ID.
+cluster_id7="$(get_cluster_id7 "${cluster_id}")"
 
 get_vmc_subnet_arn() {
   aws ec2 describe-subnets | \
@@ -74,11 +84,11 @@ create_load_balancer() {
   # See https://docs.aws.amazon.com/cli/latest/reference/elbv2/create-load-balancer.html
   # for example output from this command.
   aws elbv2 create-load-balancer \
-    --name "yakity-$(date -u '+%Y%m%d%H%M%S%N')" \
+    --name "yakity-${cluster_id7}" \
     --scheme internet-facing \
     --type network \
     --ip-address-type ipv4 \
-    --tags "Key=cluster,Value=${cluster_fqdn}" \
+    --tags "Key=ClusterID,Value=${cluster_id}" \
     --subnets "${aws_subnet_id}" | tee "${lb_json}" || \
     fatal "failed to create load balancer"
 
@@ -117,7 +127,7 @@ connect_load_balancer() {
   # for example output from this command.
   tg_http_json="$(mktemp)"
   aws elbv2 create-target-group \
-    --name "yakity-$(date -u '+%Y%m%d%H%M%S%N')" \
+    --name "yakity-${cluster_id7}" \
     --target-type ip \
     --protocol TCP \
     --port 80 \
@@ -130,7 +140,7 @@ connect_load_balancer() {
   # Add tags to the target groups.
   aws elbv2 add-tags \
     --resource-arns "${tg_http_arn}" \
-    --tags "Key=cluster,Value=${cluster_fqdn}" || \
+    --tags "Key=ClusterID,Value=${cluster_id}" || \
     fatal "failed to create load balancer target group http tags"
 
   tg_https_json="$(mktemp)"
@@ -148,7 +158,7 @@ connect_load_balancer() {
   # Add tags to the target groups.
   aws elbv2 add-tags \
     --resource-arns "${tg_http_arn}" \
-    --tags "Key=cluster,Value=${cluster_fqdn}" || \
+    --tags "Key=ClusterID,Value=${cluster_id}" || \
     fatal "failed to create load balancer target group https tags"
 
   # Create the listeners.
@@ -220,6 +230,6 @@ create)
   create_load_balancer
   ;;
 connect)
-  connect_load_balancer
+  connect_load_balancer && touch "${_done_file}"
   ;;
 esac

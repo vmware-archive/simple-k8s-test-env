@@ -15,7 +15,8 @@ Kubernetes on platforms such as VMware vSphere.
 
 ## Quick Start
 The quickest way to provision a Kubernetes cluster with Yakity is on
-vSphere using this [OVA](https://s3-us-west-2.amazonaws.com/cnx.vmware/cicd/yakity-centos.ova).
+vSphere using the yakity-photon 
+[OVA](https://s3-us-west-2.amazonaws.com/cnx.vmware/cicd/yakity-photon.ova).
 
 ## Getting Started
 Yakity can provision Kubernetes on disparate hosts configured with DHCP

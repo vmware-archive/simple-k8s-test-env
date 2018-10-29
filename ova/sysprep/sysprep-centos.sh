@@ -3,8 +3,15 @@
 # posix compliant
 # verified by https://www.shellcheck.net
 
-set -e
-set -o pipefail
+# Load the yakity commons library.
+# shellcheck disable=SC1090
+. "$(pwd)/yakity-common.sh"
+
+_done_file="$(pwd)/.$(basename "${0}").done"
+[ ! -f "${_done_file}" ] || exit 0
+
+is_true "$(rpc_get SYSPREP)" || exit 0
+touch "${_done_file}"
 
 service rsyslog stop && \
 service auditd stop && \
@@ -24,9 +31,7 @@ rm -f /etc/udev/rules.d/70* && \
 sed -i '/^(HWADDR|UUID)=/d' /etc/sysconfig/network-scripts/ifcfg-e* && \
 rm -rf /tmp/* && \
 rm -rf /var/tmp/* && \
-rm -f /etc/ssh/*key* && \
-rm -f /root/.bash_history && \
-rm -rf /root/.ssh/ && \
+rm -rf /etc/ssh/*key* && \
 rm -f /root/anaconda-ks.cfg && \
 rm -rf /var/log && mkdir -p /var/log && \
 echo 'clearing history & sealing the VM...' && \

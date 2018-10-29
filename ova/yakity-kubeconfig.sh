@@ -14,6 +14,10 @@
 # shellcheck disable=SC1090
 . "$(pwd)/yakity-common.sh"
 
+_done_file="$(pwd)/.$(basename "${0}").done"
+[ ! -f "${_done_file}" ] || exit 0
+touch "${_done_file}"
+
 if val="$(rpc_get EXTERNAL_FQDN)" && [ -n "${val}" ]; then
   api_fqdn="${val}"
   info "using external fqdn=${api_fqdn}"
@@ -75,36 +79,5 @@ SERVER="https://${api_fqdn}:${secure_port}" \
 
 # Store the kubeconfig in guestinfo.yakity.KUBECONFIG.
 rpc_set KUBECONFIG - <"${KUBECONFIG}"
-
-# If the govc environment file is available then update the VM's annotation
-# (the notes section) with a small script that may be used to fetch a
-# valid kubeconfig for the cluster.
-govc_env="$(pwd)/.govc.env"
-if [ -f "${govc_env}" ]; then
-  # Load the govc config into this script's process
-  # shellcheck disable=SC1090
-  set -o allexport && . "${govc_env}" && set +o allexport
-
-  # Get the VM's UUID.ls /va
-  self_uuid="$(get_self_uuid)"
-
-  # Update the VM's annotation to reflect the "govc" command used to obtain
-  # the kubeconfig.
-  vsphere_server="$(rpc_get VSPHERE_SERVER)"
-  vsphere_server="${vsphere_server:-VSPHERE_SERVER}"
-  vsphere_server_port="$(rpc_get VSPHERE_SERVER_PORT)"
-  vsphere_server_port="${vsphere_server_port:-443}"
-  govc_url="${vsphere_server}:${vsphere_server_port}"
-  get_kubeconfig_script="$(mktemp)"
-  cat <<EOF >"${get_kubeconfig_script}"
-_i=\$(govc vm.info -u "${govc_url}" -k -vm.uuid "${self_uuid}" -e) && \\
-_l=\$(echo "\${_i}" | grep -n yakity.KUBECONFIG | cut -d: -f 1) && \\
-echo "\${_i}" | sed -n "\${_l}"',/^\$/p' | sed -e '1 s/^.\\{0,\\}\$/apiVersion: v1/' -e '\$d'
-EOF
-  info "wrote get-kubeconfig script to ${get_kubeconfig_script}"
-  govc vm.change -vm.uuid "${self_uuid}" \
-    -annotation "$(cat "${get_kubeconfig_script}")" || \
-    error "failed to set vm's annotation to get-kubeconfig script"
-fi
 
 exit 0

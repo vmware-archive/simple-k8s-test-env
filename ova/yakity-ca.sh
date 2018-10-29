@@ -12,26 +12,15 @@
 # shellcheck disable=SC1090
 . "$(pwd)/yakity-common.sh"
 
+_done_file="$(pwd)/.$(basename "${0}").done"
+[ ! -f "${_done_file}" ] || exit 0
+touch "${_done_file}"
+
 export TLS_CA_CRT=/etc/ssl/ca.crt
 export TLS_CA_KEY=/etc/ssl/ca.key
+mkdir -p /etc/ssl && chmod 0755 /etc/ssl
 
 generate_ca() {
-  if [ -f "${TLS_CA_CRT}" ] && [ -f "${TLS_CA_KEY}" ]; then
-    info "skipping ca generation; files exist"
-    exit 0
-  fi
-  if [ -n "$(rpc_get TLS_CA_PEM)" ]; then
-    info "skipping ca generation; TLS_CA_PEM is set"
-    exit 0
-  fi
-  num_nodes="$(rpc_get NUM_NODES)"
-  if [ "${num_nodes}" -gt "1" ] && is_false "$(rpc_get BOOTSTRAP_CLUSTER)"; then
-    info "skipping ca generation; NUM_NODES=${num_nodes} and BOOTSTRAP_CLUSTER=false"
-    exit 0
-  fi
-
-  info "generating x509 self-signed certificate authority..."
-
   TLS_DEFAULT_BITS="$(rpc_get TLS_DEFAULT_BITS)"
   TLS_DEFAULT_DAYS="$(rpc_get TLS_DEFAULT_DAYS)"
   TLS_COUNTRY_NAME="$(rpc_get TLS_COUNTRY_NAME)"
@@ -54,21 +43,22 @@ generate_ca() {
   [ -z "${TLS_COMMON_NAME}" ] || export TLS_COMMON_NAME
 
   # Generate a new CA for the cluster.
-  mkdir -p /etc/ssl; chmod 0755 /etc/ssl
-  TLS_PLAIN_TEXT=true ./new-ca.sh
-  chmod 0644 /etc/ssl/ca.crt
-  chmod 0400 /etc/ssl/ca.key
+  ./new-ca.sh
 }
 
-case "${1}" in
-generate)
+if val="$(rpc_get TLS_CA_PEM)" && [ -n "${val}" ]; then
+  info "using CA from TLS_CA_PEM..."
+  echo "${val}" | unmangle_pem | openssl x509 1>"${TLS_CA_CRT}"
+  echo "${val}" | unmangle_pem | openssl  rsa 1>"${TLS_CA_KEY}"
+else
+  info "generating x509 self-signed certificate authority..."
   generate_ca
-  ;;
-set)
-  info "setting self-signed-ca"
-  rpc_set TLS_CA_PEM - <"${TLS_CA_CRT}"
-  ;;
-esac
+fi
+
+chmod 0644 "${TLS_CA_CRT}"
+chmod 0400 "${TLS_CA_KEY}"
+rpc_set TLS_CA_PEM - <"${TLS_CA_CRT}"
+openssl x509 -noout -text <"${TLS_CA_CRT}"
 
 exit 0
 

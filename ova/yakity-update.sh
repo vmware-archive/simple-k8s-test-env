@@ -11,6 +11,10 @@
 # shellcheck disable=SC1090
 . "$(pwd)/yakity-common.sh"
 
+_done_file="$(pwd)/.$(basename "${0}").done"
+[ ! -f "${_done_file}" ] || exit 0
+touch "${_done_file}"
+
 update() {
   url="$(rpc_get "${1}")"
   [ -n "${url}" ] || return 0

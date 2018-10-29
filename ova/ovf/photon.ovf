@@ -26,7 +26,7 @@
     <Name>yakity-photon</Name>
     <AnnotationSection>
       <Info>A human-readable annotation</Info>
-      <Annotation>A turn-key OVF solution for deploying single or multi-node Kubernetes clusters.</Annotation>
+      <Annotation>A turn-key solution for deploying single or multi-node Kubernetes clusters.</Annotation>
     </AnnotationSection>
     <OperatingSystemSection ovf:id="36" vmw:osType="vmwarePhoton64Guest">
       <Info>The operating system installed</Info>

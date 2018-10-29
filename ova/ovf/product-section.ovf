@@ -5,17 +5,8 @@
       <Vendor>VMware Inc.</Vendor>
       <ProductUrl>https://github.com/akutz/yakity</ProductUrl>
       <VendorUrl>https://vmware.com</VendorUrl>
-      <Category>Guest OS</Category>
-      <Property ovf:qualifiers="MinLen(3)" ovf:userConfigurable="true" ovf:value="kubernetes.yakity" ovf:type="string" ovf:key="HOST_FQDN">
-        <Label>Host FQDN</Label>
-        <Description>The host's fully qualified domain name (FQDN).</Description>
-      </Property>
-      <Property ovf:qualifiers="MinLen(0)" ovf:userConfigurable="true" ovf:value="" ovf:type="string" ovf:key="SSH_PUB_KEY">
-        <Label>SSH Public Key</Label>
-        <Description>An SSH public key to add to the root user's ".ssh/authorized_keys" file.</Description>
-      </Property>
       <Category>Kubernetes</Category>
-      <Property ovf:userConfigurable="true" ovf:value="release/stable" ovf:type="string" ovf:key="K8S_VERSION">
+      <Property ovf:qualifiers="MinLen(1)" ovf:userConfigurable="true" ovf:value="release/stable" ovf:type="string" ovf:key="K8S_VERSION">
         <Label>Version</Label>
         <Description>The Kubernetes version to install. Please see https://github.com/akutz/yakity/wiki/Kubernetes-version for valid version strings.</Description>
       </Property>
@@ -83,7 +74,7 @@ Control plane members on which workloads can be scheduled will use the memory al
       <Category>Cloud provider</Category>
       <Property ovf:qualifiers="ValueMap{&quot;None&quot;, &quot;In-tree&quot;, &quot;External&quot;}" ovf:userConfigurable="true" ovf:value="External" ovf:type="string" ovf:key="CLOUD_PROVIDER_TYPE">
         <Label>Type</Label>
-        <Description>The type of vSphere cloud provider to use.</Description>
+        <Description>The type of vSphere cloud provider to configure.</Description>
       </Property>
       <Property ovf:qualifiers="MinLen(1)" ovf:userConfigurable="true" ovf:value="gcr.io/cloud-provider-vsphere/vsphere-cloud-controller-manager:latest" ovf:type="string" ovf:key="CLOUD_PROVIDER_IMAGE">
         <Label>Image</Label>

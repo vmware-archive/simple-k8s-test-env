@@ -13,6 +13,10 @@
 # shellcheck disable=SC1090
 . "$(pwd)/yakity-common.sh"
 
+_done_file="$(pwd)/.$(basename "${0}").done"
+[ ! -f "${_done_file}" ] || exit 0
+touch "${_done_file}"
+
 # Exit the script if the govc environment file already exists.
 govc_env=".govc.env"
 [ ! -f "${govc_env}" ] || exit 0

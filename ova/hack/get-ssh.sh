@@ -10,7 +10,7 @@ set -o pipefail
 _vm_uuid="${1}"
 
 _i="$(govc vm.info -vm.uuid "${_vm_uuid}" -e)" && \
-_l=$(echo "${_i}" | grep -n 'yakity\.KUBECONFIG' | cut -d: -f 1) && \
+_l=$(echo "${_i}" | grep -n 'yakity\.SSH_PRV_KEY' | cut -d: -f 1) && \
 echo "${_i}" | \
-  sed -n "${_l}"',/^$/p' | \
-  sed -e '1 s/^.\{0,\}$/apiVersion: v1/' -e '$d'
+  sed -n "${_l}"',/-----END RSA PRIVATE KEY-----/p' | \
+  sed -e '1 s/^.\{0,\}$/-----BEGIN RSA PRIVATE KEY-----/'

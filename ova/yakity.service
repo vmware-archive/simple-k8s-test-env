@@ -19,8 +19,16 @@ WorkingDirectory=/var/lib/yakity
 # Create the yakity log directory.
 ExecStartPre=/bin/mkdir -p /var/log/yakity
 
+# Sysprep the host if necessary.
+ExecStartPre=/bin/sh -c '/var/lib/yakity/yakity-sysprep.sh 2>&1 | tee /var/log/yakity/sysprep.log'
+
 # Update the host name with the value from the OVF environment.
 ExecStartPre=/bin/sh -c '/var/lib/yakity/yakity-hostname.sh 2>&1 | tee /var/log/yakity/hostname.log'
+
+# This command ensures the yakity service will wait until the network
+# is truly online before continuing with any of the subsequent 
+# ExecStartPre commands or the ExecStart command.
+ExecStartPre=/bin/sh -c "while true; do ping -c1 google.com >/dev/null && break; done"
 
 # Create a load balancer if configured to do so.
 ExecStartPre=/bin/sh -c '/var/lib/yakity/yakity-load-balancer.sh create 2>&1 | tee /var/log/yakity/load-balancer.log'
@@ -34,13 +42,8 @@ ExecStartPre=/bin/sh -c '/var/lib/yakity/yakity-ca.sh generate 2>&1 | tee /var/l
 # Generate an SSH key pair if one is not available.
 ExecStartPre=/bin/sh -c '/var/lib/yakity/yakity-ssh.sh 2>&1 | tee /var/log/yakity/ssh.log'
 
-# See if the OVA was deployed to bootstrap a multi-node cluster.
+# Create the cluster.
 ExecStartPre=/bin/sh -c '/var/lib/yakity/yakity-cluster.sh 2>&1 | tee /var/log/yakity/cluster.log'
-
-# This command ensures the yakity service will wait until the network
-# is truly online before continuing with any of the subsequent 
-# ExecStartPre commands or the ExecStart command.
-ExecStartPre=/bin/sh -c "while true; do ping -c1 google.com >/dev/null && break; done"
 
 # This command checks to see if there were custom/updated versions of the
 # yakity-guestinfo and yakity scripts specified in the OVF data. If there
@@ -57,10 +60,6 @@ ExecStart=/bin/sh -c '/var/lib/yakity/yakity.sh 2>&1 | tee /var/log/yakity/yakit
 
 # Update the load balancer if configured to do so.
 ExecStartPost=/bin/sh -c '/var/lib/yakity/yakity-load-balancer.sh connect 2>&1 | tee -a /var/log/yakity/load-balancer.log'
-
-# This command sets the CA public certificate as a PEM-encoded value to
-# the guestinfo property yakity.TLS_CA_CRT.
-ExecStartPost=/bin/sh -c '/var/lib/yakity/yakity-ca.sh set 2>&1 | tee -a /var/log/yakity/ca.log'
 
 # This command generates a kubeconfig that can be used to access the cluster
 # (if EXTERNAL_FQDN is set) or the control plane nodes. The kubeconfig file

@@ -12,6 +12,10 @@
 # shellcheck disable=SC1090
 . "$(pwd)/yakity-common.sh"
 
+_done_file="$(pwd)/.$(basename "${0}").done"
+[ ! -f "${_done_file}" ] || exit 0
+touch "${_done_file}"
+
 YAK_DEFAULTS="${YAK_DEFAULTS:-/etc/default/yakity}"
 
 write_config_val() {
@@ -23,20 +27,6 @@ write_config_val() {
     printf 'set config val\n  key = %s\n' "${1}" 1>&2
   fi
 }
-
-# Get the PEM-encoded CA.
-if val="$(rpc_get TLS_CA_PEM)" && [ -n "${val}" ]; then
-  pem="$(mktemp)"
-  echo "${val}" | \
-    sed -r 's/(-{5}BEGIN [A-Z ]+-{5})/&\n/g; s/(-{5}END [A-Z ]+-{5})/\n&\n/g' | \
-    sed -r 's/.{64}/&\n/g; /^\s*$/d' | \
-    sed -r '/^$/d' >"${pem}"
-  ca_crt_gz="$(openssl x509 2>/dev/null <"${pem}" | gzip -9c | base64 -w0)"
-  write_config_val TLS_CA_CRT_GZ "${ca_crt_gz}"
-  ca_key_gz="$(openssl rsa 2>/dev/null <"${pem}" | gzip -9c | base64 -w0)"
-  write_config_val TLS_CA_KEY_GZ "${ca_key_gz}"
-  rm -f "${pem}"
-fi
 
 # Write the following config keys to the config file.
 write_config_val NODE_TYPE
