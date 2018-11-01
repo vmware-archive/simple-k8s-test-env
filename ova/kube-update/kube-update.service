@@ -17,13 +17,11 @@ WantedBy=multi-user.target
 [Service]
 Type=simple
 TimeoutSec=0
+WorkingDirectory=/var/lib/yakity
 
-# This command ensures the service will wait until the network
-# is truly online before continuing with any of the subsequent 
-# ExecStartPre commands or the ExecStart command.
-ExecStartPre=/bin/sh -c "while true; do ping -c1 google.com >/dev/null && break; done"
+# Create the yakity log directory.
+ExecStartPre=/bin/mkdir -p /var/log/yakity
 
-# This script polls the VMware GuestInfo property "guestinfo.kube-update.url"
-# for updated Kubernetes binaries and replaces the existing ones on this host
-# with the updated copies.
-ExecStart=/var/lib/yakity/kube-update.sh
+# This script monitors /kube-update for uploaded files and replaces K8s
+# components with updated copies.
+ExecStart=/bin/sh -c '/var/lib/yakity/kube-update.sh 2>&1 | tee /var/log/yakity/kube-update.log'

@@ -10,7 +10,7 @@ script_dir=$(python -c "import os; print(os.path.realpath('$(dirname "${0}")'))"
 case "${LINUX_DISTRO}" in
 photon)
   seal_script="${script_dir}/photon/photon-seal.sh"
-  export GOVC_VM=${GOVC_VM:-/SDDC-Datacenter/vm/Workloads/photon2}
+  export GOVC_VM=${GOVC_VM:-/SDDC-Datacenter/vm/Workloads/yakity-photon}
   SNAPSHOT_NAME=${SNAPSHOT_NAME:-bin}
   ;;
 centos)
@@ -37,22 +37,33 @@ else
 fi
 
 govc vm.change -annotation " "
-govc vm.change -e "guestinfo.yakity.EXTERNAL_FQDN=null"
-govc vm.change -e "guestinfo.yakity.VSPHERE_SERVER=${VSPHERE_SERVER}"
-govc vm.change -e "guestinfo.yakity.VSPHERE_USER=${VSPHERE_USER}"
-govc vm.change -e "guestinfo.yakity.VSPHERE_PASSWORD=${VSPHERE_PASSWORD}"
-govc vm.change -e "guestinfo.yakity.BOOTSTRAP_CLUSTER=${BOOTSTRAP_CLUSTER:-false}"
-govc vm.change -e "guestinfo.yakity.SYSPREP=${SYSPREP:-false}"
-govc vm.change -e "guestinfo.yakity.CLOUD_PROVIDER_TYPE=${CLOUD_PROVIDER_TYPE:-External}"
-govc vm.change -e "guestinfo.yakity.HOST_FQDN=${HOST_FQDN:-${LINUX_DISTRO}.yakity}"
-govc vm.change -e "guestinfo.yakity.NODE_TYPE=${NODE_TYPE:-controller}"
-govc vm.change -e "guestinfo.yakity.NUM_NODES=${NUM_NODES:-1}"
-govc vm.change -e "guestinfo.yakity.NUM_CONTROLLERS=${NUM_CONTROLLERS:-1}"
-govc vm.change -e "guestinfo.yakity.NUM_BOTH=${NUM_BOTH:-0}"
-govc vm.change -e "guestinfo.yakity.CREATE_LOAD_BALANCER=${CREATE_LOAD_BALANCER:-false}"
-govc vm.change -e "guestinfo.yakity.AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}"
-govc vm.change -e "guestinfo.yakity.AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}"
-govc vm.change -e "guestinfo.yakity.AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}"
+govc vm.change \
+  -e "guestinfo.yakity.EXTERNAL_FQDN=null" \
+  -e "guestinfo.yakity.VSPHERE_SERVER=${VSPHERE_SERVER}" \
+  -e "guestinfo.yakity.VSPHERE_SERVER_PORT=${VSPHERE_SERVER_PORT:-443}" \
+  -e "guestinfo.yakity.VSPHERE_SERVER_INSECURE=${VSPHERE_SERVER_INSECURE:-false}" \
+  -e "guestinfo.yakity.VSPHERE_USER=${VSPHERE_USER}" \
+  -e "guestinfo.yakity.VSPHERE_PASSWORD=${VSPHERE_PASSWORD}" \
+  -e "guestinfo.yakity.BOOTSTRAP_CLUSTER=${BOOTSTRAP_CLUSTER:-false}" \
+  -e "guestinfo.yakity.SYSPREP=${SYSPREP:-false}" \
+  -e "guestinfo.yakity.CLOUD_PROVIDER_TYPE=${CLOUD_PROVIDER_TYPE:-External}" \
+  -e "guestinfo.yakity.CLOUD_PROVIDER_IMAGE=${CLOUD_PROVIDER_IMAGE:-'gcr.io/cloud-provider-vsphere/vsphere-cloud-controller-manager:latest'}" \
+  -e "guestinfo.yakity.INSTALL_CONFORMANCE_TESTS=${INSTALL_CONFORMANCE_TESTS:-false}" \
+  -e "guestinfo.yakity.LOG_LEVEL_KUBERNETES=${LOG_LEVEL_KUBERNETES:-2}" \
+  -e "guestinfo.yakity.HOST_FQDN=${HOST_FQDN:-${LINUX_DISTRO}.yakity}" \
+  -e "guestinfo.yakity.NODE_TYPE=${NODE_TYPE:-controller}" \
+  -e "guestinfo.yakity.NUM_NODES=${NUM_NODES:-1}" \
+  -e "guestinfo.yakity.NUM_CONTROLLERS=${NUM_CONTROLLERS:-1}" \
+  -e "guestinfo.yakity.NUM_BOTH=${NUM_BOTH:-0}" \
+  -e "guestinfo.yakity.CREATE_LOAD_BALANCER=${CREATE_LOAD_BALANCER:-false}" \
+  -e "guestinfo.yakity.AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" \
+  -e "guestinfo.yakity.AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}" \
+  -e "guestinfo.yakity.AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}" \
+  -e "guestinfo.yakity.K8S_VERSION=${K8S_VERSION:-release/stable}" \
+  -e "guestinfo.yakity.CLONE_NUM_CPUS_CONTROLLERS=${CLONE_NUM_CPUS_CONTROLLERS:-2}" \
+  -e "guestinfo.yakity.CLONE_MEM_GB_CONTROLLERS=${CLONE_MEM_GB_CONTROLLERS:-8}" \
+  -e "guestinfo.yakity.CLONE_NUM_CPUS_WORKERS=${CLONE_NUM_CPUS_WORKERS:-8}" \
+  -e "guestinfo.yakity.CLONE_MEM_GB_WORKERS=${CLONE_MEM_GB_WORKERS:-16}"
 
 # Power on the VM
 echo "powering on the VM..."
@@ -153,7 +164,7 @@ if [ "${1}" = "seal" ]; then
   exit 0
 fi
 
-ssh_do systemctl -l --no-block start yakity kube-update
+ssh_do systemctl -l --no-block start kube-update yakity
 ssh_do 'rm -f /root/.bash_history && history -c'
 
 SSH_CMD="ssh -o ProxyCommand='ssh -W ${VM_IP}:22 $(whoami)@50.112.88.129' root@${VM_IP}"

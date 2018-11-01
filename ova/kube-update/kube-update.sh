@@ -4,61 +4,51 @@
 # verified by https://www.shellcheck.net
 
 #
-# Used by the kube-update service to monitor a vSphere GuestInfo property
-# and update one or more Kubernetes components when the property value changes.
-#
-# The monitored property is "guestinfo.kube-update.url". Valid URLs must
-# adhere to the pattern '^\(\(https\{0,1\}\)\|file\)://'. In other words
-# the following URL schemes are supported: http, https, and file.
-#
-# Please note that all URLs using the "file://" scheme must use absolute paths.
+# Used by the kube-update service to monitor well-defined paths in order
+# to update K8s components on a running cluster.
 #
 
-set -e
-set -o pipefail
+# Load the yakity commons library.
+# shellcheck disable=SC1090
+. "$(pwd)/yakity-common.sh"
 
-# Add ${BIN_DIR} to the path
-BIN_DIR="${BIN_DIR:-/opt/bin}"; mkdir -p "${BIN_DIR}"; chmod 0755 "${BIN_DIR}"
-echo "${PATH}" | grep -qF "${BIN_DIR}" || export PATH="${BIN_DIR}:${PATH}"
+# The inotifywait program is required. If missing please install the
+# distribution's inotify-tools (or equivalent) package.
+require_program inotifywait
 
-# echo2 echoes the provided arguments to file descriptor 2, stderr.
-echo2() { echo "${@}" 1>&2; }
+mkdir_and_chmod() { mkdir -p "${@}" && chmod 0755 "${@}"; }
 
-# error is an alias for echo2
-error() { echo2 "${@}"; }
+info_env_var() {
+  while [ -n "${1}" ]; do
+    info "${1}=$(eval "echo \$${1}")" && shift
+  done
+}
 
-# fatal echoes a string to stderr and then exits the program.
-fatal() { exit_code="${2:-${?}}"; echo2 "${1}"; exit "${exit_code}"; }
+# A flag that indicates whether to skip uploads that are the same as the
+# files on the host.
+SKIP_DUPLICATES="$(parse_bool "${SKIP_DUPLICATES}" true)"
 
-# If the rpctool command cannot be found and RPCTOOL is set,
-# then update the PATH to include the RPCTOOL's parent directory.
-if ! command -v rpctool >/dev/null 2>&1 && [ -f "${RPCTOOL}" ]; then
-  PATH="$(dirname "${RPCTOOL}"):${PATH}"; export PATH
-fi
+# The file used to track which hosts have been validated.
+HOSTS_FILE=/var/lib/yakity/kube-update/.hosts
+mkdir_and_chmod "$(dirname ${HOSTS_FILE})"
+touch "${HOSTS_FILE}"
 
-# If the rpctool command cannot be found then abort the script.
-if ! command -v rpctool >/dev/null 2>&1; then
-  fatal "failed to find rpctool command"
-fi
+# Get the name (sans domain) of this host.
+HOST_NAME="$(hostname -s)"
 
-# The GuestInfo property to monitor for update information.
-RPC_KEY_URL="kube-update.url"
+# The directories where clients and peers upload files.
+CLIENT_DIR=/var/lib/yakity/kube-update/client-uploads
+PEER_IN_DIR=/var/lib/yakity/kube-update/peer-in
+PEER_OUT_DIR=/var/lib/yakity/kube-update/peer-out
+mkdir_and_chmod /var/lib/yakity /var/lib/yakity/kube-update \
+                "${CLIENT_DIR}" "${PEER_IN_DIR}" "${PEER_OUT_DIR}"
+info_env_var CLIENT_DIR PEER_IN_DIR PEER_OUT_DIR
 
-# The GuestInfo property to communicate the status to the client.
-RPC_KEY_STATUS="kube-update.status"
+# Create a symlink for the client uploads if one does not exist.
+[ -e /kube-update ] || ln -s "${CLIENT_DIR}" /kube-update
 
-# The GuestInfo property that lets clients monitor an update process.
-RPC_KEY_LOG="kube-update.log"
-
-# The file to which update messages are written.
-UPDATE_LOG="$(mktemp)" || fatal "failed to create UPDATE_LOG"
-
-# The temp directory where files are downloaded before being relocated
-# to their permanent location.
-TEMP_FILE_AREA="$(mktemp -d)" || fatal "failed to create TEMP_FILE_AREA"
-
-# The temp file used to contain the names of the files in TEMP_FILE_AREA.
-TEMP_FILE_LIST="$(mktemp)" || fatal "failed to create TEMP_FILE_LIST"
+# The area where uploaded files are moved while being processed.
+TEMP_FILE_AREA="$(mktemp -d)"; info_env_var TEMP_FILE_AREA
 
 # The following environment variables are the locations of the eponymous
 # Kubernetes binaries.
@@ -69,243 +59,176 @@ KUBE_CONTROLLER_MANAGER_BIN="${KUBE_CONTROLLER_MANAGER_BIN:-${BIN_DIR}/kube-cont
 KUBE_SCHEDULER_BIN="${KUBE_SCHEDULER_BIN:-${BIN_DIR}/kube-scheduler}"
 KUBE_PROXY_BIN="${KUBE_PROXY_BIN:-${BIN_DIR}/kube-proxy}"
 
-mkdir -p "$(dirname "${KUBECTL_BIN}")"
-mkdir -p "$(dirname "${KUBELET_BIN}")"
-mkdir -p "$(dirname "${KUBE_APISERVER_BIN}")"
-mkdir -p "$(dirname "${KUBE_CONTROLLER_MANAGER_BIN}")"
-mkdir -p "$(dirname "${KUBE_SCHEDULER_BIN}")"
-mkdir -p "$(dirname "${KUBE_PROXY_BIN}")"
+mkdir_and_chmod "$(dirname "${KUBECTL_BIN}")" \
+                "$(dirname "${KUBELET_BIN}")" \
+                "$(dirname "${KUBE_APISERVER_BIN}")" \
+                "$(dirname "${KUBE_CONTROLLER_MANAGER_BIN}")" \
+                "$(dirname "${KUBE_SCHEDULER_BIN}")" \
+                "$(dirname "${KUBE_PROXY_BIN}")"
 
-# The default curl command to use instead of invoking curl directly.
-CURL="curl --retry 5 --retry-delay 1 --retry-max-time 120"
+info_env_var KUBECTL_BIN \
+             KUBELET_BIN \
+             KUBE_APISERVER_BIN \
+             KUBE_CONTROLLER_MANAGER_BIN \
+             KUBE_SCHEDULER_BIN \
+             KUBE_PROXY_BIN
 
-# Print the configuration properties
-print_config_val() {
-  printf '  %-30s= %s\n' "${1}" "$(eval echo "\$${1}")"
-}
-echo "kube-update config:"
-print_config_val PATH
-print_config_val CURL
-print_config_val RPC_KEY_URL
-print_config_val RPC_KEY_STATUS
-print_config_val RPC_KEY_LOG
-print_config_val UPDATE_LOG
-print_config_val TEMP_FILE_AREA
-print_config_val TEMP_FILE_LIST
-print_config_val BIN_DIR
-print_config_val KUBECTL_BIN
-print_config_val KUBELET_BIN
-print_config_val KUBE_APISERVER_BIN
-print_config_val KUBE_CONTROLLER_MANAGER_BIN
-print_config_val KUBE_SCHEDULER_BIN
-print_config_val KUBE_PROXY_BIN
-echo
-
-rpc_set() {
-  rpctool set "${1}" "${2}" || fatal "rpctool: set ${1}=${2} failed"
-}
-rpc_set_url() {
-  rpc_set "${RPC_KEY_URL}" "${1}"
-}
-rpc_set_status() {
-  rpc_set "${RPC_KEY_STATUS}" "${1}"
-}
-rpc_flush_log() {
-  rpc_set "${RPC_KEY_LOG}" - <"${UPDATE_LOG}"
-}
-rpc_reset_log() {
-  printf '' >"${UPDATE_LOG}"
-  rpc_flush_log
-}
-rpc_log() {
-  echo "${@}" >>"${UPDATE_LOG}"
-  rpc_flush_log
-}
-rpc_info() {
-  echo "${@}"
-  rpc_log "${@}"
-}
-rpc_error() {
-  error "error: ${1}"
-  rpc_log "error: ${1}"
-  rpc_set_status error
-}
-rpc_fatal() {
-  exit_code="${?}"
-  error "fatal: ${1}"
-  rpc_log "fatal: ${1}"
-  rpc_set_status fatal
-  exit "${exit_code}"
-}
-rpc_exec() {
-  rpc_log "${@}"
-  "${@}" 2>&1 | tee -a "${UPDATE_LOG}"
-  exit_code="${?}"
-  rpc_flush_log
-  return "${exit_code}"
+scp_file() {
+  _file_path="${1}"
+  _host_name="${2}"
+  info "uploading ${_file_path} to ${_host_name}"
+  scp -o StrictHostKeyChecking=no \
+    "${_file_path}" "${_host_name}:${PEER_IN_DIR}/" || \
+    error "failed to scp ${_file_path} to ${_host_name}"
 }
 
-govc_env="$(pwd)/.govc.env"
-if [ -f "${govc_env}" ]; then
-  # Load the govc config into this script's process
-  # shellcheck disable=SC1090
-  set -o allexport && . "${govc_env}" && set +o allexport
-  unset GOVC_SELF
-  echo "loaded ${govc_env}"
-fi
+cluster_members="$(rpc_get CLUSTER_MEMBERS)"
+process_outload() {
+  _file_dir="${1}"
+  _file_name="${2}"
+  _file_path="${_file_dir}/${_file_name}"
 
-echo "beginning message loop..."
+  for _member in ${cluster_members}; do
+    _member_host_name="$(parse_member_host_name "${_member}")"
 
-while true; do
-  sleep 1
-
-  # Indicate to clients that the service is ready to recieve a new URL.
-  rpc_set_status ready
-
-  # Reset the TEMP_FILE_AREA and TEMP_FILE_LIST
-  rm -fr "${TEMP_FILE_AREA}" "${TEMP_FILE_LIST}"
-  mkdir -p "${TEMP_FILE_AREA}"
-
-  # If the rpctool command fails then exit the script.
-  if ! url=$(rpctool get "${RPC_KEY_URL}"); then
-    rpc_fatal "rpctool: get '${RPC_KEY_URL}' failed"
-  fi
-
-  # If the URL is undefined or "null" then just continue to the next loop.
-  { [ ! -z "${url}" ] && [ ! "${url}" = "null" ]; } || continue
-
-  # Update the status to that of the URL value.
-  rpc_set_status "${url}"
-
-  # Rest the update log.
-  rpc_reset_log
-
-  # Set the update URL to "null" since the rpctool cannot delete a guestinfo
-  # value. It's not even clear if the RPC interface can do it. Setting the
-  # URL to "null" indicates to this script that the previous URL has been
-  # removed but no new one has been set.
-  rpc_set_url "null"
-
-  # If the URL does not begin with "http://", "https://", or "file://" then
-  # continue to the next iteration of the loop.
-  if ! echo "${url}" | grep -iq '^\(\(https\{0,1\}\)\|file\)://'; then
-    rpc_error "invalid-url: ${url}"
-    continue
-  fi
-
-  # Indicate the URL is being processed.
-  rpc_info "processing URL = ${url}"
-
-  # Get the file name from the URL.
-  if ! file_name="$(basename "${url}")"; then
-    rpc_error "failed to get base name of URL=${url}"
-    continue
-  fi
-
-  if echo "${file_name}" | grep -q '\.tar\.gz$'; then
-    if ! ${CURL} -L "${url}" | tar -xzC "${TEMP_FILE_AREA}"; then
-      rpc_error "failed to download and inflate ${url}"
-      continue
-    fi
-  elif echo "${file_name}" | grep -q '\.tar$'; then
-    if ! ${CURL} -L "${url}" | tar -xC "${TEMP_FILE_AREA}"; then
-      rpc_error "failed to download and inflate ${url}"
-      continue
-    fi
-  elif echo "${file_name}" | grep -q '\.gz$'; then
-    if ! ${CURL} -Lo "${TEMP_FILE_AREA}/${file_name}"; then
-      rpc_error "failed to download ${url}"
-      continue
-    fi
-    if ! (cd "${TEMP_FILE_AREA}" && \
-          gzip -d "${TEMP_FILE_AREA}/${file_name}"); then
-      rpc_error "failed to inflate ${TEMP_FILE_AREA}/${file_name}"
-      continue
-    fi
-    rm -f "${TEMP_FILE_AREA}/${file_name}"
-  elif ! ${CURL} -Lo "${TEMP_FILE_AREA}/${file_name}" "${url}"; then
-    rpc_error "failed to download ${url}"
-    continue
-  fi
-
-  # Find all the files in TEMP_FILE_AREA.
-  if ! find "${TEMP_FILE_AREA}" -type f 1>"${TEMP_FILE_LIST}"; then
-    rpc_fatal "failed to find files in TEMP_FILE_AREA"
-  fi
-
-  # Iterate over the discovered files.
-  while IFS= read -r file_path; do
-
-    # If the file path does not exist then skip it.
-    [ -f "${file_path}" ] || continue
-
-    # Get the file's basename (no directory) or skip to the next iteration.
-    file_name="$(basename "${file_path}")" || \
-      { rpc_error "skipping '${file_path}'; basename failed"; continue; }
-
-    # The action taken on each file depends on the file's name.
-    src_bin="${file_path}"
-    case "${file_name}" in
-    kubectl)
-      unset service_name
-      tgt_bin="${KUBECTL_BIN}"
-      ;;
-    kubelet)
-      service_name="${file_name}"
-      tgt_bin="${KUBELET_BIN}"
-      ;;
-    kube-apiserver)
-      service_name="${file_name}"
-      tgt_bin="${KUBE_APISERVER_BIN}"
-      ;;
-    kube-controller-manager)
-      service_name="${file_name}"
-      tgt_bin="${KUBE_CONTROLLER_MANAGER_BIN}"
-      ;;
-    kube-scheduler)
-      service_name="${file_name}"
-      tgt_bin="${KUBE_SCHEDULER_BIN}"
-      ;;
-    kube-proxy)
-      service_name="${file_name}"
-      tgt_bin="${KUBE_PROXY_BIN}"
-      ;;
-    *)
-      unset service_name
-      unset tgt_bin
-      ;;
-    esac
-
-    # If no target path was set then skip the rest of this iteration.
-    if [ -z "${tgt_bin}" ]; then
-      error "skipping unknown file '${file_path}'"
+    if [ "${_member_host_name}" = "${HOST_NAME}" ]; then
+      info "skipping outload for self: ${_member_host_name}"
       continue
     fi
 
-    printf 'updating %s:\n  %-10s= %s\n  %-10s= %s\n  %-10s= %s\n' \
-      "${file_name}" \
-      src_bin "${src_bin}" \
-      tgt_bin "${tgt_bin}" \
-      service "${service_name}" | tee -a "${UPDATE_LOG}"
-    rpc_flush_log
+    info "uploading ${_file_path} to ${_member_host_name}"
+    scp -o StrictHostKeyChecking=no \
+      "${_file_path}" "${_member_host_name}:${PEER_IN_DIR}/" || \
+      error "failed to scp ${_file_path} to ${_member_host_name}"
+  done
 
-    rpc_exec chmod 0755 "${src_bin}" || \
-      { rpc_error "failed to chmod 0755 ${src_bin}"; continue; }
+  rm -f "${_file_path}"
+  info "completed outload for ${_file_path}"
+}
 
-    if [ -z "${service_name}" ]; then
-      rpc_exec mv -f "${src_bin}" "${tgt_bin}" || \
-        { rpc_error "failed to mv '${src_bin}' to '${tgt_bin}'"; continue; }
-    else
-      rpc_exec systemctl -l stop "${service_name}" || \
-        { rpc_error "failed to stop ${service_name}"; continue; }
+process_upload() {
+  _file_dir="${1}"
+  _file_name="${2}"
+  _file_path="${_file_dir}/${_file_name}"
+  _upload_type=peer
+  if [ "${_file_dir}" = "${CLIENT_DIR}" ]; then _upload_type=client; fi
 
-      rpc_exec mv -f "${src_bin}" "${tgt_bin}" || \
-        { rpc_error "failed to mv '${src_bin}' to '${tgt_bin}'"; continue; }
+  info "processing ${_upload_type} upload: ${_file_path}"
 
-      rpc_exec systemctl -l start "${service_name}" || \
-        { rpc_error "failed to start ${service_name}"; continue; }
+  if echo "${_file_name}" | grep -q '\.tar\.gz$'; then
+    tar -xzf "${_file_path}" -C "${TEMP_FILE_AREA}"
+  elif echo "${_file_name}" | grep -q '\.tar$'; then
+    tar -xf "${_file_path}" -C "${TEMP_FILE_AREA}"
+  elif echo "${_file_name}" | grep -q '\.gz$'; then
+    (cd "${TEMP_FILE_AREA}" && gzip -d "${_file_path}")
+  else
+    cp -f "${_file_path}" "${TEMP_FILE_AREA}/"
+  fi
+  if [ "${_upload_type}" = "client" ]; then
+    mv -f "${_file_path}" "${PEER_OUT_DIR}/"
+  else
+    rm -f "${_file_path}"
+  fi
+}
+
+watch_client_dir() {
+  inotifywait -m --format "%f" -e close_write "${CLIENT_DIR}" | \
+  while read -r _file_name; do
+    process_upload "${CLIENT_DIR}" "${_file_name}"
+  done
+}
+
+watch_peer_in_dir() {
+  inotifywait -m --format "%f" -e close_write "${PEER_IN_DIR}" | \
+  while read -r _file_name; do
+    process_upload "${PEER_IN_DIR}" "${_file_name}"
+  done
+}
+
+watch_peer_out_dir() {
+  inotifywait -m --format "%f" -e moved_to "${PEER_OUT_DIR}" | \
+  while read -r _file_name; do
+    process_outload "${PEER_OUT_DIR}" "${_file_name}"
+  done
+}
+
+process_new_file() {
+  _file_dir="${1}"
+  _file_name="${2}"
+  _file_path="${_file_dir}/${_file_name}"
+  debug "processing unknown file: ${_file_path}"
+
+  # If the file path does not exist then skip it.
+  [ -f "${_file_path}" ] || return 0
+
+  unset _service_name _tgt_bin
+
+  # The action taken on each file depends on the file's name.
+  _src_bin="${_file_path}"
+  case "${_file_name}" in
+  kubectl)
+    _tgt_bin="${KUBECTL_BIN}"
+    ;;
+  kubelet)
+    _service_name="${_file_name}"
+    _tgt_bin="${KUBELET_BIN}"
+    ;;
+  kube-apiserver)
+    _service_name="${_file_name}"
+    _tgt_bin="${KUBE_APISERVER_BIN}"
+    ;;
+  kube-controller-manager)
+    _service_name="${_file_name}"
+    _tgt_bin="${KUBE_CONTROLLER_MANAGER_BIN}"
+    ;;
+  kube-scheduler)
+    _service_name="${_file_name}"
+    _tgt_bin="${KUBE_SCHEDULER_BIN}"
+    ;;
+  kube-proxy)
+    _service_name="${_file_name}"
+    _tgt_bin="${KUBE_PROXY_BIN}"
+    ;;
+  esac
+
+  if [ -z "${_tgt_bin}" ]; then
+    rm -fr "${_src_bin}"
+    return 0
+  fi
+
+  info "processing known file: ${_src_bin}"
+
+  if [ -f "${_tgt_bin}" ] && [ "${SKIP_DUPLICATES}" = "true" ]; then
+    _tgt_hash="$(sha1sum -b "${_tgt_bin}" | awk '{print $1}')"
+    _src_hash="$(sha1sum -b "${_src_bin}" | awk '{print $1}')"
+    if [ "${_tgt_hash}" = "${_src_hash}" ]; then
+      info "skipping duplicate: name=${_file_name} hash=${_src_hash}"
+      return 0
     fi
-  done <"${TEMP_FILE_LIST}"
-done
+  fi
+  chmod 0755 "${_src_bin}"
 
-exit 0
+  if [ -z "${_service_name}" ]; then
+    mv -f "${_src_bin}" "${_tgt_bin}"
+  elif systemctl is-enabled "${_service_name}" >/dev/null 2>&1; then
+    systemctl -l stop "${_service_name}" && \
+      mv -f "${_src_bin}" "${_tgt_bin}" && \
+      systemctl -l start "${_service_name}"
+  fi
+  info "replaced ${_tgt_bin}"
+}
+
+watch_temp_file_area() {
+  inotifywait -m -r --format "%f" -e close_write "${TEMP_FILE_AREA}" | \
+  while read -r _file_name; do
+    process_new_file "${TEMP_FILE_AREA}" "${_file_name}"
+  done
+}
+
+# Start the background processes that monitor the upload and outload paths.
+watch_client_dir &
+watch_peer_in_dir &
+watch_peer_out_dir &
+
+# Start the process that monitors the temp file area.
+watch_temp_file_area

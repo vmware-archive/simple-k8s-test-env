@@ -127,7 +127,7 @@ connect_load_balancer() {
   # for example output from this command.
   tg_http_json="$(mktemp)"
   aws elbv2 create-target-group \
-    --name "yakity-${cluster_id7}" \
+    --name "yakity-${cluster_id7}-http" \
     --target-type ip \
     --protocol TCP \
     --port 80 \
@@ -145,7 +145,7 @@ connect_load_balancer() {
 
   tg_https_json="$(mktemp)"
   aws elbv2 create-target-group \
-    --name "yakity-$(date -u '+%Y%m%d%H%M%S%N')" \
+    --name "yakity-${cluster_id7}-https" \
     --target-type ip \
     --protocol TCP \
     --port 443 \

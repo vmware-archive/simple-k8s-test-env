@@ -51,8 +51,8 @@ power_on_vm() {
   govc vm.power -on -vm.uuid "${1}" || fatal "failed to power on ${1}"
 }
 
-CLONE_UUID_FILE="$(mktemp)";      export CLONE_UUID_FILE;
-CLONE_UUID_LOCK="$(mktemp)";      export CLONE_UUID_LOCK;
+CLONE_INFO_FILE="$(mktemp)";      export CLONE_INFO_FILE;
+CLONE_INFO_LOCK="$(mktemp)";      export CLONE_INFO_LOCK;
 
 create_clone() {
   _clone_node_type="${1}"
@@ -61,6 +61,7 @@ create_clone() {
   _clone_num_cpus="${4}"
   _clone_mem_mib="${5}"
   _clone_ipath="${6}"
+  _clone_host_name="${7}"
 
   # Clone this VM.
   govc vm.clone \
@@ -87,11 +88,11 @@ clone memory (GiB)    = ${_clone_mem_mib}
 
 EOF
 
-  # Write the clone's UUID to the UUID files using an exclusive lock in order
+  # Write the clone's info to the info file using an exclusive lock in order
   # to prevent other create_clone jobs that have been background from
-  # writing to the UUID file at the same time as this job.
-  flock -x "${CLONE_UUID_LOCK}" \
-    echo "${_clone_node_type}:${_clone_uuid}" >>"${CLONE_UUID_FILE}"
+  # writing to the file at the same time as this job.
+  _clone_info="${_clone_node_type}:${_clone_uuid}:${_clone_host_name}"
+  flock -x "${CLONE_INFO_LOCK}" echo "${_clone_info}" >>"${CLONE_INFO_FILE}"
 
   # Update the clone's guestinfo to tell the clone that it has in fact
   # been cloned. This will cause this script to sysprep the clone when
@@ -112,6 +113,9 @@ EOF
   set_guestinfo "${_clone_uuid}" NODE_TYPE      "${_clone_node_type}"
   set_guestinfo "${_clone_uuid}" HOST_FQDN      "${_clone_fqdn}"
   set_guestinfo "${_clone_uuid}" ETCD_DISCOVERY "${ETCD_DISCOVERY}"
+  set_guestinfo "${_clone_uuid}" KUBECONFIG     "$(rpc_get KUBECONFIG)"
+  set_guestinfo "${_clone_uuid}" SSH_PRV_KEY    "$(rpc_get SSH_PRV_KEY)"
+  set_guestinfo "${_clone_uuid}" TLS_CA_PEM     "$(rpc_get TLS_CA_PEM)"
 
   # Iterate over the configuration keys to set on the new VM.
   while IFS= read -r _key; do
@@ -165,6 +169,10 @@ set_annotation "${cluster_id}" "${self_uuid}" "${k8s_version}"
 
 # The type of node being cloned.
 self_node_type="$(get_self_node_type)"
+
+# Set the cluster members information so the clients can at least SSH to this
+# VM while the cluster is coming online.
+rpc_set "CLUSTER_MEMBERS" "${self_node_type}:${self_uuid}:c01"
 
 # The total number of nodes in the cluster.
 num_nodes="$(rpc_get NUM_NODES)"
@@ -275,7 +283,7 @@ cluster etcd                             = ${ETCD_DISCOVERY}
 
 ================================================================================
 cluster control plane nodes              = ${num_controllers}
-cluster that can schedule workloads    = ${num_both}
+    that can schedule workloads          = ${num_both}
 cluster worker nodes                     = ${num_workers}
 ================================================================================
 
@@ -287,7 +295,7 @@ cluster total memory (GiB)               = ${total_mem_gib}
 
 ================================================================================
 cluster num control plane nodes to clone = ${num_controllers_to_clone}
-cluster that can schedule workloads    = ${num_controllers_to_clone_as_both}
+    that can schedule workloads          = ${num_controllers_to_clone_as_both}
 cluster num worker nodes to clone        = ${num_workers_to_clone}
 ================================================================================
 
@@ -314,7 +322,8 @@ i=0 && while [ "${i}" -lt "${num_controllers_to_clone}" ]; do
                 "${clone_fqdn}" \
                 "${clone_num_cpus}" \
                 "${clone_mem_mib}" \
-                "${clone_ipath}" &
+                "${clone_ipath}" \
+                "${clone_name_suffix}" &
 
   i="$((i+1))"
   i_ctl="$((i_ctl+1))"
@@ -336,7 +345,8 @@ i=0 && while [ "${i}" -lt "${num_workers_to_clone}" ]; do
                 "${clone_fqdn}" \
                 "${clone_num_cpus}" \
                 "${clone_mem_mib}" \
-                "${clone_ipath}" &
+                "${clone_ipath}" \
+                "${clone_name_suffix}" &
 
   i="$((i+1))"
   i_wrk="$((i_wrk+1))"
@@ -345,30 +355,31 @@ done
 # Wait on all of the clone jobs to complete.
 wait || fatal "clone job(s) failed"
 
-# Create a list of all the UUIDs of the VMs in this cluster.
-_cluster_uuids="${self_node_type}:${self_uuid}"
-while IFS= read -r _type_and_uuid; do
-  _cluster_uuids="${_cluster_uuids} ${_type_and_uuid}"
-done <"${CLONE_UUID_FILE}"
+# Create a space-delimited list of the type:uuid:hostname values for
+# all members of this cluster.
+_cluster_members="${self_node_type}:${self_uuid}:c01"
+while IFS= read -r _member; do
+  _cluster_members="${_cluster_members} ${_member}"
+done <"${CLONE_INFO_FILE}"
 
-# Assign the list of cluster IDs to each node in the cluster so that nodes
-# are able to query vSphere about other nodes using unique IDs.
-for _type_and_uuid in ${_cluster_uuids}; do
-  _uuid="$(echo "${_type_and_uuid}" | awk -F: '{print $2}')"
-  set_guestinfo "${_uuid}" CLUSTER_UUIDS "${_cluster_uuids}" &
+# Assign the list of cluster members to each member so nodes are aware of
+# the other members of the cluster. This loop also sets the annotation on
+# each member.
+for _member in ${_cluster_members}; do
+  _member_id="$(parse_member_id "${_member}")"
+  set_guestinfo "${_member_id}" CLUSTER_MEMBERS "${_cluster_members}" &
 
   # Update the VM's annotation to reflect how to access the cluster.
-  set_annotation "${cluster_id}" "${_uuid}" "${k8s_version}" &
+  set_annotation "${cluster_id}" "${_member_id}" "${k8s_version}" &
 done
 
-# Wait on all of the set cluster ID / VM annotation jobs to complete.
-wait || fatal "set cluster UUID  / VM annotation job(s) failed"
+# Wait on all of the set cluster member / VM annotation jobs to complete.
+wait || fatal "set cluster member  / VM annotation job(s) failed"
 
 # Power on all of the cloned VMs.
-while IFS= read -r _type_and_uuid; do
-  _uuid="$(echo "${_type_and_uuid}" | awk -F: '{print $2}')"
-  power_on_vm "${_uuid}" &
-done <"${CLONE_UUID_FILE}"
+while IFS= read -r _member; do
+  power_on_vm "$(parse_member_id "${_member}")" &
+done <"${CLONE_INFO_FILE}"
 
 # Wait on all of the power-on jobs to complete.
 wait || fatal "power-on job(s) failed"

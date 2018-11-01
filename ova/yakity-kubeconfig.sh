@@ -21,12 +21,9 @@ touch "${_done_file}"
 if val="$(rpc_get EXTERNAL_FQDN)" && [ -n "${val}" ]; then
   api_fqdn="${val}"
   info "using external fqdn=${api_fqdn}"
-elif is_controller "$(rpc_get NODE_TYPE)"; then
-  api_fqdn="$(ip route get 1 | awk '{print $NF;exit}')"
-  info "using own ipv4 address=${api_fqdn}"
 else
   api_fqdn="$(get_controller_ipv4_addrs | head -n 1)"
-  info "using ipv4 address of first controller node=${api_fqdn}"
+  info "using ipv4 address of controller node=${api_fqdn}"
 fi
 
 if [ -z "${api_fqdn}" ]; then
@@ -70,9 +67,9 @@ TLS_COMMON_NAME="admin" \
 
 # Generate a new kubeconfig for the K8s admin user.
 info "generating kubeconfig for the k8s-admin user..."
+KUBECONFIG="$(mktemp)"; export KUBECONFIG
 secure_port="$(rpc_get SECURE_PORT)"
 secure_port="${secure_port:-443}"
-KUBECONFIG="$(mktemp)"; export KUBECONFIG
 SERVER="https://${api_fqdn}:${secure_port}" \
   USER="admin" \
   ./new-kubeconfig.sh

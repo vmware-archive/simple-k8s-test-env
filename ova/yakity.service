@@ -42,6 +42,11 @@ ExecStartPre=/bin/sh -c '/var/lib/yakity/yakity-ca.sh generate 2>&1 | tee /var/l
 # Generate an SSH key pair if one is not available.
 ExecStartPre=/bin/sh -c '/var/lib/yakity/yakity-ssh.sh 2>&1 | tee /var/log/yakity/ssh.log'
 
+# This command generates a kubeconfig that can be used to access the cluster
+# (if EXTERNAL_FQDN is set) or the control plane nodes. The kubeconfig file
+# is assigned to the guestinfo property "yakity.kubeconfig".
+ExecStartPre=/bin/sh -c '/var/lib/yakity/yakity-kubeconfig.sh 2>&1 | tee /var/log/yakity/kubeconfig.log'
+
 # Create the cluster.
 ExecStartPre=/bin/sh -c '/var/lib/yakity/yakity-cluster.sh 2>&1 | tee /var/log/yakity/cluster.log'
 
@@ -60,11 +65,6 @@ ExecStart=/bin/sh -c '/var/lib/yakity/yakity.sh 2>&1 | tee /var/log/yakity/yakit
 
 # Update the load balancer if configured to do so.
 ExecStartPost=/bin/sh -c '/var/lib/yakity/yakity-load-balancer.sh connect 2>&1 | tee -a /var/log/yakity/load-balancer.log'
-
-# This command generates a kubeconfig that can be used to access the cluster
-# (if EXTERNAL_FQDN is set) or the control plane nodes. The kubeconfig file
-# is assigned to the guestinfo property "yakity.kubeconfig".
-ExecStartPost=/bin/sh -c '/var/lib/yakity/yakity-kubeconfig.sh 2>&1 | tee /var/log/yakity/kubeconfig.log'
 
 # This command ensures that this service is not run on subsequent boots.
 ExecStartPost=/bin/touch /var/lib/yakity/.yakity.service.done

@@ -43,8 +43,12 @@ require_program rpctool
 
 # Parses the argument and normalizes a truthy value to lower-case "true" or
 # a non-truthy value to lower-case "false".
+#
+# $1 - The value to parse
+# $2 - A default value if $1 is undefined
 parse_bool() {
-  { echo "${1}" | \
+  val="${1:-${2}}"
+  { echo "${val}" | \
     grep -iq '^[[:space:]]\{0,\}\(1\|yes\|true\)[[:space:]]\{0,\}$' && \
     echo true; } || echo false
 }
@@ -126,43 +130,35 @@ export is_whole_num
 
 # log LEVEL_INT LEVEL_SZ MSG [RETURN_CODE]
 log() {
-  _lvl_int="${1}"; _lvl_sz="${2}"; _msg="${3}";
+  _rc="${?}"
+  _lvl_int="${1}"; _lvl_sz="${2}"; _msg="${3}"
+  ! is_whole_num "${4}" || _rc="${4}"
   if [ "${LOG_LEVEL}" -ge "${_lvl_int}" ]; then
     printf2 '%s [%s] %s\n' "${_lvl_sz}" "$(date +%s)" "${_msg}"
   fi
-  return 0
+  return "${_rc}"
 }
 export log
 
 # debug MSG [RETURN_CODE]
 #   Prints the supplies message to stderr if LOG_LEVEL >=DEBUG_LEVEL.
-debug() { log "${DEBUG_LEVEL}" DEBUG "${@}"; }; export debug
+debug() { log "${DEBUG_LEVEL}" DEBUG "${1}" 0; }; export debug
 
 # info MSG [RETURN_CODE]
 #   Prints the supplies message to stderr if LOG_LEVEL >=INFO_LEVEL.
-info() { log "${INFO_LEVEL}" INFO "${@}"; }; export info
+info() { log "${INFO_LEVEL}" INFO "${1}" 0; }; export info
 
 # warn MSG [RETURN_CODE]
 #   Prints the supplies message to stderr if LOG_LEVEL >=WARN_LEVEL.
-warn() { log "${WARN_LEVEL}" WARN "${@}"; }; export warn
+warn() { log "${WARN_LEVEL}" WARN "${1}" 0; }; export warn
 
 # error MSG [RETURN_CODE]
 #   Prints the supplies message to stderr if LOG_LEVEL >=ERROR_LEVEL.
-error() {
-  _xc="${?}"
-  log "${ERROR_LEVEL}" ERROR "${@}"
-  return "${_xc}"
-}
-export error
+error() { log "${ERROR_LEVEL}" ERROR "${1}" 0; }; export error
 
 # fatal MSG [RETURN_CODE]
 #   Prints the supplies message to stderr if LOG_LEVEL >=FATAL_LEVEL.
-fatal() {
-  _xc="${?}"
-  log "${FATAL_LEVEL}" FATAL "${@}"
-  [ "${_xc}" -eq "0" ] || exit "${_xc}"
-}
-export fatal
+fatal() { log "${FATAL_LEVEL}" FATAL "${@}" || exit "${?}"; }; export fatal
 
 require() {
   while [ -n "${1}" ]; do
@@ -319,44 +315,26 @@ EOF
 }
 export set_host_name
 
+# Get the short version of the cluster ID.
+get_cluster_id7() { echo "${1}" | cut -c-7; }; export get_cluster_id7
+
 get_cluster_access_info() {
   _cluster_id="${1}"
   _vm_uuid="${2}"
   _k8s_version="${3}"
+  _cluster_id7="$(get_cluster_id7 "${_cluster_id}")"
+
   cat <<EOF
 KUBERNETES VERSION
 ${_k8s_version}
 
 CLUSTER ID
-${_cluster_id}
+${_cluster_id7}
 
-VM ID
-${_vm_uuid}
-
-GOVC
-The following commands rely on the program "govc", a command line
-utility for managing vSphere. Please ensure "govc" is installed and
-that it is configured to access the vSphere instance managing this VM.
-For more information please see http://bit.ly/govc-readme.
-
-GET KUBECONFIG
-curl -sSL http://bit.ly/get-kubeconfig | sh -s -- "${_vm_uuid}"
-
-SSH ACCESS
-curl -sSL http://bit.ly/ssh-to-vm | sh -s -- "${_vm_uuid}"
-
-DELETE CLUSTER
-If the cluster was created with an AWS load balancer then the AWS CLI
-must be installed and configured in order for the following command to
-remove any load-balancer-related resources. If the AWS CLI is missing or
-unconfigured, the load-balancer-related resources are not removed.
-
-curl -sSL http://bit.ly/delete-cluster | sh -s -- "${_vm_uuid}"
+REMOTE ACCESS
+curl -sSL http://bit.ly/yakcess | sh -s -- ${_vm_uuid}
 EOF
 }
-
-# Get the short version of the cluster ID.
-get_cluster_id7() { echo "${1}" | cut -c-7; }; export get_cluster_id7
 
 unmangle_pem() {
   sed -r 's/(-{5}BEGIN [A-Z ]+-{5})/&\n/g; s/(-{5}END [A-Z ]+-{5})/\n&\n/g' | \
@@ -364,3 +342,46 @@ unmangle_pem() {
     sed -r '/^$/d'
 }
 export unmangle_pem
+
+# Returns the last argument as an array using a POSIX-compliant method
+# for handling arrays.
+only_last_arg() {
+  _l="${#}" _i=0 _j="$((_l-1))" && while [ "${_i}" -lt "${_l}" ]; do
+    if [ "${_i}" -eq "${_j}" ]; then
+      printf '%s\n' "${1}" | sed "s/'/'\\\\''/g;1s/^/'/;\$s/\$/' \\\\/"
+    fi
+    shift; _i="$((_i+1))"
+  done
+  echo " "
+}
+export only_last_arg
+
+# Returns all but the last argument as an array using a POSIX-compliant method
+# for handling arrays.
+trim_last_arg() {
+  _l="${#}" _i=0 _j="$((_l-1))" && while [ "${_i}" -lt "${_l}" ]; do
+    if [ "${_i}" -lt "${_j}" ]; then
+      printf '%s\n' "${1}" | sed "s/'/'\\\\''/g;1s/^/'/;\$s/\$/' \\\\/"
+    fi
+    shift; _i="$((_i+1))"
+  done
+  echo " "
+}
+export trim_last_arg
+
+# "${node_type}:${uuid}:${host_name}"
+parse_member_info()      { echo "${2}" | awk -F: '{print $'"${1}"'}'; }
+parse_member_node_type() { parse_member_info 1 "${1}"; }
+parse_member_id()        { parse_member_info 2 "${1}"; }
+parse_member_host_name() { parse_member_info 3 "${1}"; }
+export parse_member_info \
+       parse_member_node_type \
+       parse_member_id \
+       parse_member_host_name
+
+is_file_empty() {
+  [ ! -e "${1}" ] || \
+    wc -l >/dev/null 2>&1 <"${1}" || \
+    grep -q '[[:space:]]\{0,\}' "${1}"
+}
+export is_file_empty

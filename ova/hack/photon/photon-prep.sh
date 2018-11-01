@@ -4,7 +4,14 @@
 # installation in preparation to be processed by the yakity prep
 # scripts.
 tdnf upgrade -y && \
-tdnf install -y ipvsadm unzip && \
+tdnf install -y gawk \
+                ipvsadm \
+                unzip \
+                lsof \
+                bindutils \
+                iputils \
+                tar \
+                inotify-tools && \
 { cat >/etc/sysconfig/iptables <<EOF
 *filter
 :INPUT DROP [0:0]
@@ -39,8 +46,9 @@ tdnf install -y ipvsadm unzip && \
 COMMIT
 EOF
 } && \
-rm -f /etc/sysconfig/ip6tables && \
-cp /etc/sysconfig/iptables /etc/sysconfig/ip6tables && \
+cp -f /etc/sysconfig/iptables /etc/sysconfig/ip6tables && \
+cp -f /etc/sysconfig/iptables /etc/systemd/scripts/ip4save && \
+cp -f /etc/sysconfig/iptables /etc/systemd/scripts/ip6save && \
 ln -s /usr/bin/python3 /usr/bin/python && \
 mkdir -p /opt/bin && chmod 0755 /opt /opt/bin && cd /opt/bin && \
 curl "https://s3.amazonaws.com/aws-cli/awscli-bundle.zip" -o "awscli-bundle.zip" && \
@@ -49,3 +57,18 @@ awscli-bundle/install -i /opt/aws -b /opt/bin/aws && \
 /bin/rm -fr awscli-bundle awscli-bundle.zip && \
 curl -sSLo jq https://github.com/stedolan/jq/releases/download/jq-1.5/jq-linux64 && \
 chmod 0755 jq
+
+exit 0
+
+IPV4_ADDR=192.168.3.149
+
+ssh -o ProxyCommand="ssh -W ${IPV4_ADDR}:22 akutz@50.112.88.129" root@${IPV4_ADDR}
+
+scp -o ProxyCommand="ssh -W ${IPV4_ADDR}:22 akutz@50.112.88.129" \
+  ova/rpctool/rpctool root@${IPV4_ADDR}:/opt/bin/rpctool
+
+scp -o ProxyCommand="ssh -W ${IPV4_ADDR}:22 akutz@50.112.88.129" \
+  ova/govc-linux-amd64 root@${IPV4_ADDR}:/opt/bin/govc
+
+scp -o ProxyCommand="ssh -W ${IPV4_ADDR}:22 akutz@50.112.88.129" \
+  "${GOPATH}/src/k8s.io/kubernetes/_output/release-stage/client/linux-amd64/kubernetes/client/bin/kubectl" root@${IPV4_ADDR}:/opt/bin/

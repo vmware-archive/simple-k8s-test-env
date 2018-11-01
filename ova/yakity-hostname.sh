@@ -18,8 +18,10 @@ if is_true "$(rpc_get BOOTSTRAP_CLUSTER)"; then
   self_uuid="$(get_self_uuid)"
 
   # Generate a unique ID for the cluster.
-  cluster_id="$(echo "${self_uuid}-$(date --utc '+%s')" | sha1sum | awk '{print $1}')"
+  cluster_id=$(echo "${self_uuid}-$(date --utc '+%s')" | \
+    sha1sum | awk '{print $1}')
   rpc_set CLUSTER_ID "${cluster_id}"
+  info "cluster-id=${cluster_id}"
 
   # Get the short version of the cluster ID.
   cluster_id7="$(get_cluster_id7 "${cluster_id}")"
@@ -28,6 +30,7 @@ if is_true "$(rpc_get BOOTSTRAP_CLUSTER)"; then
   # cluster ID.
   domain_name="${cluster_id7}.yakity"
   rpc_set NETWORK_DOMAIN "${domain_name}"
+  info "cluster-domain=${domain_name}"
 
   # The first node in the cluster is always a member of the control plane, so
   # the host name will always be c01.
