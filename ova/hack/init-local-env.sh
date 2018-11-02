@@ -111,7 +111,8 @@ echo2 'success!'
 # Save the cluster's kubeconfig.
 printf2 '  % -30s' '* kubeconfig'
 kubeconfig="${yak_dir}/kubeconfig"
-if ! rpc_get "${vm_uuid}" KUBECONFIG '^$' | sed '$d' 1>"${kubeconfig}" || \
+if ! rpc_get "${vm_uuid}" KUBECONFIG 'guestinfo.' | \
+  sed '$d' 1>"${kubeconfig}" || \
   is_file_empty "${kubeconfig}"; then
   echo2 'failed!' && exit 1
 fi
