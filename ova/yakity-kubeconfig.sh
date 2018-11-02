@@ -22,7 +22,7 @@ if val="$(rpc_get EXTERNAL_FQDN)" && [ -n "${val}" ]; then
   api_fqdn="${val}"
   info "using external fqdn=${api_fqdn}"
 else
-  api_fqdn="$(get_controller_ipv4_addrs | head -n 1)"
+  api_fqdn="$(ip route get 1 | awk '{print $NF;exit}')"
   info "using ipv4 address of controller node=${api_fqdn}"
 fi
 
