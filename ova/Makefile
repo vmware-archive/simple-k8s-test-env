@@ -52,4 +52,4 @@ upload-%: yakity-%.ova
 
 .PHONY: prep seal turn-up turn-down upload
 
-.PRECIOUS: %-1.vmdk %-2.nvram
+.PRECIOUS: %-1.vmdk %-2.nvram yakity-%.ovf
