@@ -154,6 +154,9 @@ ssh_do 'chmod 0755 /var/lib/yakity/*.sh'
 ssh_do systemctl -l enable /var/lib/yakity/yakity.service \
                            /var/lib/yakity/kube-update.service
 
+# Echo the version of yakity into the VM.
+ssh_do 'echo "'"$(git describe --dirty)"'" >/var/lib/yakity/version'
+
 if [ "${1}" = "seal" ]; then
   if [ -f "${seal_script}" ]; then
     scp_to /tmp/ "${seal_script}"
