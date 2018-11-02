@@ -11,11 +11,6 @@
 set -e
 set -o pipefail
 
-if [ "${#}" -lt "1" ]; then
-  echo "usage: ${0} VM_UUID"
-  exit 1
-fi
-
 # Store the VM's UUID.
 vm_uuid="${1}"
 
@@ -25,6 +20,14 @@ echo2() { echo "${@}" 1>&2; }
 # printf2 prints the provided format and arguments to stderr.
 # shellcheck disable=SC2059
 printf2() { _f="${1}"; shift; printf "${_f}" "${@}" 1>&2; }
+
+if [ "${#}" -lt "1" ]; then
+  echo2 "usage: ${0} VM_UUID" && exit 1
+fi
+
+if ! command -v govc >/dev/null 2>&1; then
+  echo2 "failed to detect the govc command" && exit 1
+fi
 
 rpc_get_one_line() {
   _vm_uuid="${1}"; _key="${2}"
@@ -88,10 +91,8 @@ echo "${cluster_id}" >"${cluster_id_file}"
 printf2 '  % -30s' '* members'
 cluster_members_file="${yak_dir}/.cluster/members"
 if ! rpc_get "${vm_uuid}" CLUSTER_MEMBERS | \
-  tr '[:space:]' '\n' 1>"${cluster_members_file}"; then
-  echo2 'failed!' && exit 1
-fi
-if is_file_empty "${cluster_members_file}"; then
+  tr '[:space:]' '\n' 1>"${cluster_members_file}" || \
+  is_file_empty "${cluster_members_file}"; then
   echo2 'failed!' && exit 1
 fi
 echo2 'success!'
@@ -99,10 +100,9 @@ echo2 'success!'
 # Save the cluster's SSH key.
 printf2 '  % -30s' '* ssh key'
 ident_file="${yak_dir}/.ssh/id_rsa"
-rpc_get "${vm_uuid}" \
-        SSH_PRV_KEY \
-        "-----END RSA PRIVATE KEY-----" 1>"${ident_file}"
-if is_file_empty "${ident_file}"; then
+if ! rpc_get "${vm_uuid}" SSH_PRV_KEY \
+  "-----END RSA PRIVATE KEY-----" 1>"${ident_file}" || \
+  is_file_empty "${ident_file}"; then
   echo2 'failed!' && exit 1
 fi
 chmod 0600 "${ident_file}"
@@ -111,8 +111,8 @@ echo2 'success!'
 # Save the cluster's kubeconfig.
 printf2 '  % -30s' '* kubeconfig'
 kubeconfig="${yak_dir}/kubeconfig"
-rpc_get "${vm_uuid}" KUBECONFIG '^$' | sed '$d' 1>"${kubeconfig}"
-if is_file_empty "${kubeconfig}"; then
+if ! rpc_get "${vm_uuid}" KUBECONFIG '^$' | sed '$d' 1>"${kubeconfig}" || \
+  is_file_empty "${kubeconfig}"; then
   echo2 'failed!' && exit 1
 fi
 echo2 'success!'
@@ -120,8 +120,12 @@ echo2 'success!'
 # Save the cluster's load balancer ID
 printf2 '  % -30s' '* load-balancer'
 lb_id_file="${yak_dir}/.load-balancer/id"
-rpc_get "${vm_uuid}" LOAD_BALANCER_ID 1>"${lb_id_file}"
-echo2 'success!'
+if val="$(rpc_get "${vm_uuid}" LOAD_BALANCER_ID)" && [ -n "${val}" ]; then
+  echo "${val}" >"${lb_id_file}"
+  echo2 'success!'
+else
+  echo2 'notfound'
+fi
 
 echo2
 echo2 "generating cluster access"
@@ -227,11 +231,17 @@ while read -r member; do
   govc vm.destroy -vm.uuid "\${member_id}"
 done <"${cluster_members_file}"
 
+[ -f "${lb_id_file}" ] || exit 0
 load_balancer_id="\$(cat "${lb_id_file}")"
 [ -n "\${load_balancer_id}" ]         || exit 0
 [ ! "\${load_balancer_id}" = "null" ] || exit 0
-command -v aws >/dev/null 2>&1        || exit 0
-command -v  jq >/dev/null 2>&1        || exit 0
+
+if ! command -v aws >/dev/null 2>&1; then
+  echo2 "failed to detect the aws command" && exit 1
+fi
+if ! command -v jq >/dev/null 2>&1; then
+  echo2 "failed to detect the jq command" && exit 1
+fi
 
 target_group_ids=$(aws elbv2 describe-target-groups | \
   jq -r '.TargetGroups | .[] | select(.LoadBalancerArns != null) | select(any(.LoadBalancerArns[]; . == "'"\${load_balancer_id}"'")) | .TargetGroupArn')
