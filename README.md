@@ -1,17 +1,26 @@
 # yakity
-In a world with dozens of ways to turn up Kubernetes, why Yakity? Other 
-deployment tools focus on developers building applications that run on
-Kubernetes.
+*For developers building and testing Kubernetes and core Kubernets components*
 
-*Yakity is for developers building and testing Kubernetes*.
+## Overview
+There are generally three types of people working with Kubernetes:
 
-Yakity stands for **Y**et **A**nother **K**ubernetes **I**nstaller 
-**T**hing**y**, and that's exactly what it is -- a program to deploy
-a single-node, multi-node, or multi-master Kubernetes cluster. With 
-support for deploying builds staged with
-[`kubetest`](https://github.com/kubernetes/test-infra/tree/master/kubetest),
-yakity is the ideal solution for building, testing, and deploying
-Kubernetes on platforms such as VMware vSphere.
+  1. Operators
+  2. Developers building and testing applications for and with Kubernetes
+  3. Developers building and testing Kubernetes
+
+While there are multiple solutions available for the first two types of
+people, there's a gap when it comes to helping the third. Yakity is
+designed to assist developers building and testing Kubernetes and core
+Kubernetes components such as cloud providers. Yakity is:
+
+  * Capable of deploying single-node, multi-node, and even multi-control plane node clusters
+  * Designed to deploy *any* version of Kubernetes (+1.10) on generic Linux distributions
+  * Able to deploy Kubernetes from multiple sources such as GCS and S3 buckets or [any HTTP location](https://github.com/akutz/yakity/wiki/Kubernetes-version)
+  * Capable of supporting nodes using DHCP via yakity's discovery process
+  * A single, POSIX-compliant shell-script making it easy to modify
+
+For more detailed information, the entire yakity process, including discovery,
+is available as a UML [model](https://s3-us-west-2.amazonaws.com/cnx.vmware/cicd/yakity/svg/yakity-overview.svg).
 
 ## Quick Start
 The quickest way to provision a Kubernetes cluster with Yakity is on
@@ -69,11 +78,6 @@ Address 1: 10.32.0.10
 Name:      kubernetes
 Address 1: 10.32.0.1
 ```
-
-## Building the OVA
-The yakity project includes support for an OVA that makes deploying Kubernetes
-to vSphere a snap. Instructions for building the OVA are found in the 
-[`ova`](/ova) directory.
 
 ## Todo
 * Better testing

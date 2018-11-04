@@ -1,0 +1,142 @@
+@startuml yakity-overview
+right header
+yakity
+endheader
+right footer
+
+akutz at VMware
+https://github.com/akutz/yakity
+endfooter
+
+title Generic execution of yakity\n
+
+start
+:parse command line args;
+:load config from ""/etc/default/yakity"";
+:add ""/opt/bin"" to ""PATH"";
+:generate ""/opt/bin/node-type"" command;
+:configure the shell prompt;
+repeat 
+  :is network online?;
+repeat while (network is not available)
+:update guest OS packages;
+:parse kubernetes version;
+partition "Download Binaries" {
+  :jq;
+  :etcd;
+  if (node is member of control plane?) then (yes)
+    :kubernetes server;
+    :nginx;
+    :coredns;
+  else (no)
+  endif
+  if (node can schedule workloads) then (yes)
+    :kubernetes node;
+    if (install e2e conformance tests?) then (yes)
+      :kubernetes test;
+    else (no)
+    endif
+    :containerd;
+    :crictl;
+    :runc;
+    :runsc;
+    :CNI plug-ins;
+  else (no)
+  endif
+}
+:create ""k8s-admin"" group;
+:configure iptables;
+if (network manager controls dns?) then (yes)
+  :disable network manager dns;
+else (no)
+endif
+:install certificate authority;
+partition "Discovery" {
+  if (node is member of control plane?) then (yes)
+    :install etcd as systemd service;
+  else (no)
+  endif
+  repeat 
+    :read etcd discovery url;
+  repeat while (number of hosts in response is less than 
+  the number of expected control plane nodes)
+  repeat
+    :get etcd cluster members;
+  repeat while (not all control plane members have joined the etcd cluster)
+  :configure etcdctl;
+  :grant etcd lease for yakity properties;
+  :upload host/node information to etcd;
+  repeat
+    :get node info from etcd;
+    :does actual number of nodes match expected number?;
+  repeat while (number of nodes in etcd does not match expected number)
+  :register A-record and reverse IP entries for 
+  self under ""/skydns"" key;
+  :register round-robin CNAME that points to IP
+  addresses of control plane members;
+  if (external FQDN is defined?) then (yes)
+    :register CNAME for external FQDN that 
+    points to internal cluster CNAME to prevent 
+    requests for the external FQDN from paper-
+    clipping;
+  else (no)
+  endif
+  if (systemd-resolved service exists?) then (yes)
+    :disable systemd-resolved service;
+  else (no)
+  endif
+  if (node is member of control plane?) then (yes)
+    :install coredns as systemd service;
+    :modify ""/etc/resolv.conf"" to point to self;
+  else (no)
+    :modify ""/etc/resolv.conf"" to point to IP
+    addresses of control plane members;
+  endif
+  repeat
+    :resolve all nodes by reverse IP lookup;
+  repeat while (one or more nodes cannot be resolved by reverse-IP lookup)
+}
+if (node can schedule workloads) then (yes)
+  :enable bridge module;
+else (no)
+endif
+:enable IP forwarding;
+:create static routes that point to pod networks
+on other nodes;
+if (node can schedule workloads) then (yes)
+  :install CNI plug-ins;
+  :install containerd as systemd service;
+else (no)
+endif
+if (node is member of control plane?) then (yes)
+  :install nginx as systemd service;
+else (no)
+endif
+partition Kubernetes {
+  :generate or fetched shared kubernetes assets;
+  if (node is member of control plane?) then (yes)
+    :install kube-apiserver as systemd service;
+    :apply RBAC;
+    :install kube-controller-manager as systemd service;
+    :install kube-scheduler as systemd service;
+    :deploy kubernetes DNS provider manifest;
+    :deploy kubernetes cloud-provider manifest;
+    if (install e2e conformance tests?) then (yes)
+      :create e2e conformance test manifest that
+      can be accessed at ""http://API_FQDN/e2e/job.yaml""
+      to make executing the e2e conformance suite
+      simple and fast;
+    else (no)
+    endif
+  else (no)
+  endif
+  if (node can schedule workloads?) then (yes)
+    :wait for healthy kubernetes cluster;
+    :install kubelet as systemd service;
+    :install kube-proxy as systemd service;
+  else (no)
+  endif
+}
+:so long and thanks for all the fish;
+stop
+@enduml
