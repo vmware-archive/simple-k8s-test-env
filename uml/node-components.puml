@@ -1,0 +1,38 @@
+@startuml node-components
+rectangle "Control plane node(s)\n" {
+  agent "coredns"
+  database "etcd"
+  agent "nginx"
+  agent "kube-apiserver" as kube_apiserver
+  agent "kube-controller-manager" as kube_controller_manager
+  agent "kube-scheduler" as kube_scheduler
+
+  nginx --> kube_apiserver
+  nginx -[hidden]-> kube_controller_manager
+  nginx -[hidden]-> kube_scheduler
+  coredns -right-> etcd
+  kube_apiserver -down-> etcd
+  kube_controller_manager -right-> kube_apiserver
+  kube_apiserver -down-> kube_scheduler
+}
+
+rectangle "Worker node(s)\n" {
+  agent "kubelet"
+  agent "kube-proxy" as kube_proxy
+  agent "containerd" as cri
+  agent "iptables"
+  component "runc"
+  component "runsc"
+  component "cni"
+
+  kube_scheduler -right-> kubelet
+  kubelet -[hidden]right-> kube_proxy
+  kubelet -right-> cri
+  cri <-up-> runc
+  cri <-up-> runsc
+  cri <-up-> cni
+  iptables -[hidden]right-> cni
+  iptables <-down- kube_proxy
+}
+
+@enduml

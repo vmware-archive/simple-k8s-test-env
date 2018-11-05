@@ -8,29 +8,33 @@ There are generally three types of people working with Kubernetes:
   2. Developers building and testing applications for and with Kubernetes
   3. Developers building and testing Kubernetes
 
-While there are multiple solutions available for the first two types of
-people, there's a gap when it comes to helping the third. Yakity is
-designed to assist developers building and testing Kubernetes and core
-Kubernetes components such as cloud providers. Yakity is:
+While there are multiple solutions available for the first two types of people,
+there's a gap when it comes to helping the third. Yakity fills that gap and is:
 
-  * Capable of deploying single-node, multi-node, and even multi-control plane node clusters
-  * Designed to deploy *any* version of Kubernetes (+1.10) on generic Linux distributions
-  * Able to deploy Kubernetes from multiple sources such as GCS and S3 buckets or [any HTTP location](https://github.com/akutz/yakity/wiki/Kubernetes-version)
-  * Capable of supporting nodes using DHCP via yakity's discovery process
+  * Capable of deploying *any* [version](https://github.com/akutz/yakity/wiki/Kubernetes-version) of Kubernetes (+1.10) on generic Linux distributions
+  * Designed to deploy single-node, multi-node, and even multi-control plane node clusters
+  * Able to deploy nodes on DHCP networks and still support both host FQDNs and IP addresses
   * A single, POSIX-compliant shell-script making it easy to modify
 
-For more detailed information, the entire yakity process, including discovery,
-is available as a UML [model](https://s3-us-west-2.amazonaws.com/cnx.vmware/cicd/yakity/svg/yakity-overview.svg).
+### Components
+A yakity-provisioned cluster passes the Kubernetes e2e conformance test suite
+because yakity uses a well-known, standard set of components to the control
+plane and worker nodes:
+
+![Node components](https://s3-us-west-2.amazonaws.com/cnx.vmware/cicd/yakity/svg/node-components.svg?v2)
+
+### Install process
+The entire yakity install process, including the discovery phase, is represented
+with this [model](https://s3-us-west-2.amazonaws.com/cnx.vmware/cicd/yakity/svg/install-process.svg).
 
 ## Quick Start
-The quickest way to provision a Kubernetes cluster with Yakity is on
-vSphere using the yakity-photon 
-[OVA](https://s3-us-west-2.amazonaws.com/cnx.vmware/cicd/yakity-photon.ova).
+The quickest way to provision a Kubernetes cluster with Yakity is on vSphere 
+using the yakity-photon [OVA](https://s3-us-west-2.amazonaws.com/cnx.vmware/cicd/yakity-photon.ova).
 
 ## Getting Started
-Yakity can provision Kubernetes on disparate hosts configured with DHCP
-or static networking. This example demonstrates using yakity to
-provision Kubernetes to two Amazon EC2 CentOS Linux instances.
+Yakity can provision Kubernetes on disparate hosts configured with DHCP or 
+static networking. This example demonstrates using yakity to provision 
+Kubernetes to two Amazon EC2 CentOS Linux instances.
 
 The first step is to generate an etcd discovery URL:
 
