@@ -244,7 +244,7 @@ if ! command -v jq >/dev/null 2>&1; then
   echo2 "failed to detect the jq command" && exit 1
 fi
 
-target_group_ids=$(aws elbv2 describe-target-groups | \
+target_group_ids=\$(aws elbv2 describe-target-groups | \
   jq -r '.TargetGroups | .[] | select(.LoadBalancerArns != null) | select(any(.LoadBalancerArns[]; . == "'"\${load_balancer_id}"'")) | .TargetGroupArn')
 
 echo2 "deleting load balancer \${load_balancer_id}"
