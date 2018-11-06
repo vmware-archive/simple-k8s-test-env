@@ -32,8 +32,8 @@ plane and worker nodes:
 ### How to provision Kubernetes with yakity
 There are several ways to provision a Kubernetes cluster with yakity:
 
-  * [Provision a multi-node cluster on vSphere with the yakity OVA](doc/provision-on-vsphere-with-ova.md)
-  * [Provision a multi-node cluster on VMware Cloud (VMC) on AWS with the yakity OVA](doc/provision-on-vmc-with-ova.md)
+  * [Provision a multi-node cluster on vSphere with the yakity OVA](ova/doc/provision-on-vsphere-with-ova.md)
+  * [Provision a multi-node cluster on VMware Cloud (VMC) on AWS with the yakity OVA](ova/doc/provision-on-vmc-with-ova.md)
   * [Provision a single-node cluster with yakity and Vagrant](vagrant/single-node)
   * [Provision a multi-node cluster with yakity and Vagrant](vagrant/multi-node)
 
