@@ -1,0 +1,159 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# Yakity
+#
+# Copyright (c) 2018 VMware, Inc. All Rights Reserved.
+#
+# This product is licensed to you under the Apache 2.0 license (the "License").
+# You may not use this product except in compliance with the Apache 2.0 License.
+#
+# This product may include a number of subcomponents with separate copyright
+# notices and license terms. Your use of these subcomponents is subject to the
+# terms and conditions of the subcomponent's license, as noted in the LICENSE
+# file.
+
+if (not File.file?('config.yaml'))
+  puts 'do not execute this file directly'
+  exit 1
+end
+
+require 'yaml'
+nodes = YAML.load_file('config.yaml')['nodes']
+
+num_nodes       = nodes.length
+num_controllers = 0
+num_workers     = 0
+nodes.each do |nodedef|
+  case nodedef['type']
+  when 'both', 'controller'
+    num_controllers = num_controllers + 1
+  when 'worker'
+    num_workers = num_workers + 1
+  end
+end
+
+etcd_disco = `curl -sSL https://discovery.etcd.io/new?size=#{num_controllers}`
+
+# Generate a self-signed CA to use with the box(es).
+if (not File.file?('../ca.crt') or not File.file?('../ca.key'))
+  `TLS_CA_CRT=../ca.crt \
+  TLS_CA_KEY=../ca.key \
+  ../../hack/new-ca.sh >/dev/null 2>&1`
+end
+if (not File.file?('../k8s-admin.crt'))
+  `TLS_CA_CRT=../ca.crt \
+  TLS_CA_KEY=../ca.key \
+  TLS_CRT_OUT=../k8s-admin.crt \
+  TLS_KEY_OUT=../k8s-admin.key \
+  TLS_SAN=false \
+  TLS_ORG_NAME="system:masters" \
+  TLS_COMMON_NAME=admin \
+  ../../hack/new-cert.sh >/dev/null 2>&1`
+end
+if (not File.file?('../kubeconfig'))
+  `KUBECONFIG=../kubeconfig \
+  TLS_CA_CRT=../ca.crt \
+  TLS_CA_KEY=../ca.key \
+  TLS_CRT=../k8s-admin.crt \
+  TLS_KEY=../k8s-admin.key \
+  SERVER="https://127.0.0.1:6443" \
+  USER=admin \
+  ../../hack/new-kubeconfig.sh >/dev/null 2>&1`
+end
+
+Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/xenial64"
+  config.vm.network "private_network", type: "dhcp"
+
+  config.vm.provider "virtualbox" do |vb| 
+    vb.cpus = 1
+    vb.memory = 1024
+
+    # Make sure the first NIC has a "random" MAC address to ensure it is not
+    # the same MAC address as the other node
+    vb.customize ["modifyvm", :id, "--macaddress1", "auto"]
+
+    # Never allo the VM to use more than 50% of the CPU.
+    vb.customize ["modifyvm", :id, "--cpuexecutioncap", "50"]
+  end
+
+  # Create the node(s)
+  nodes.each do |nodedef|
+    config.vm.define nodedef['host'] do |node|
+
+      node.vm.hostname = "#{nodedef['host']}.yakity"
+
+      # Forward the API server port for the first node only.
+      if (nodedef['host'] == "c01")
+        node.vm.network "forwarded_port", guest: 443, host: 6443
+      end
+
+      # Set up the guest.
+      node.vm.provision "shell" do |s|
+        s.name =   "mkdir-yakity"
+        s.inline = <<-SHELL
+          mkdir -p /var/lib/yakity
+          chown vagrant /var/lib/yakity
+          echo '. /etc/profile' >>/home/vagrant/.bashrc
+        SHELL
+      end
+
+      # Copy the yakity script.
+      node.vm.provision "file" do |f|
+        f.source       = "../../yakity.sh"
+        f.destination  = "/var/lib/yakity/yakity.sh"
+      end
+
+      # Copy the yakity service.
+      node.vm.provision "file" do |f|
+        f.source       = "../yakity.service"
+        f.destination  = "/var/lib/yakity/yakity.service"
+      end
+
+      # Copy the CA cert and key.
+      node.vm.provision "file" do |f|
+        f.source       = "../ca.crt"
+        f.destination  = "/var/lib/yakity/ca.crt"
+      end
+      node.vm.provision "file" do |f|
+        f.source       = "../ca.key"
+        f.destination  = "/var/lib/yakity/ca.key"
+      end
+
+      # Move the certs and set the permissions on the yakity script and cert.
+      node.vm.provision "shell" do |s|
+        s.name =   "mv-cert-and-set-perms"
+        s.inline = <<-SHELL
+          mv /var/lib/yakity/ca.* /etc/ssl/
+          chown root:root /etc/ssl/ca.crt /etc/ssl/ca.key
+          chmod 0644 /etc/ssl/ca.crt
+          chmod 0400 /etc/ssl/ca.key
+          chmod 0755 /var/lib/yakity/yakity.sh
+        SHELL
+      end
+
+      # Write the yakity defaults and install the service.
+      node.vm.provision "shell" do |s|
+        s.name =   "write-yakity-defaults"
+        s.inline = <<-SHELL
+          cat <<EOF >/etc/default/yakity
+IP_ROUTE_DEV="dev enp0s8"
+ETCD_DISCOVERY="#{etcd_disco}"
+NUM_NODES="#{nodes.length}"
+NUM_CONTROLLERS="#{num_controllers}"
+NODE_TYPE="#{nodedef['type']}"
+INSTALL_CONFORMANCE_TESTS="false"
+EOF
+          systemctl -l enable /var/lib/yakity/yakity.service
+        SHELL
+      end
+
+      # Start yakity.
+      node.vm.provision "shell" do |s|
+        s.name =   "start-yakity"
+        s.inline = "systemctl -l --no-block start yakity"
+      end
+    end
+  end
+end

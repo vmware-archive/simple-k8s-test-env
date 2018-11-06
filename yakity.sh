@@ -37,7 +37,7 @@
 #                        NUM_CONTROLLERS.
 #
 
-set -o pipefail
+set -o pipefail || echo 'pipefail unsupported' 1>&2
 
 # Parses the argument and normalizes a truthy value to lower-case "true".
 parse_bool() {
@@ -332,7 +332,8 @@ if [ "${HOST_FQDN}" = "${HOST_NAME}" ]; then
   HOST_NAME=$(hostname -s) || fatal "failed to get host name"
 fi
 
-IPV4_ADDRESS=$(ip route get 1 | awk '{print $NF;exit}') || \
+# shellcheck disable=SC2086
+IPV4_ADDRESS=$(ip route get ${IP_ROUTE_DEV} 1 | awk '{print $NF;exit}') || \
   fatal "failed to get ipv4 address"
 
 ################################################################################
@@ -345,6 +346,11 @@ NETWORK_DOMAIN="${NETWORK_DOMAIN:-$(hostname -d)}" || \
 NETWORK_DNS_1="${NETWORK_DNS_1:-8.8.8.8}"
 NETWORK_DNS_2="${NETWORK_DNS_2:-8.8.4.4}"
 NETWORK_DNS_SEARCH="${NETWORK_DNS_SEARCH:-${NETWORK_DOMAIN}}"
+
+info "HOST_FQDN=${HOST_FQDN}"
+info "HOST_NAME=${HOST_NAME}"
+info "IPV4_ADDRESS=${IPV4_ADDRESS}"
+info "NETWORK_DOMAIN=${NETWORK_DOMAIN}"
 
 # The number of seconds the keys associated with yakity will exist
 # before being removed by the etcd server.
@@ -2101,7 +2107,7 @@ LimitNPROC=infinity
 LimitCORE=infinity
 WorkingDirectory=/var/lib/containerd
 EnvironmentFile=/etc/default/path
-ExecStartPre=/usr/sbin/modprobe overlay
+ExecStartPre=/bin/sh -c '/usr/sbin/modprobe overlay || /sbin/modprobe overlay'
 ExecStart=/opt/bin/containerd
 EOF
 
@@ -2322,6 +2328,8 @@ KUBELET_OPTS="--allow-privileged \\
 --config=/var/lib/kubelet/kubelet-config.yaml \\
 --container-runtime=remote \
 --container-runtime-endpoint=unix:///var/run/containerd/containerd.sock \\
+--fail-swap-on=false \\
+--hostname-override='${HOST_FQDN}' \\
 --image-pull-progress-deadline=2m \\
 --kubeconfig=/var/lib/kubelet/kubeconfig \\
 --network-plugin=cni \\
@@ -4234,6 +4242,7 @@ install_packages() {
   # Debian/Ubuntu
   elif command -v apt-get >/dev/null 2>&1; then
     info "installing packages via apt-get"
+    apt-get update
     debug "apt-get install lsof dnsutils"
     apt-get -y install lsof dnsutils || true
     if [ ! "${NODE_TYPE}" = "controller" ]; then

@@ -1,0 +1,5 @@
+.vagrant
+*.crt
+*.key
+kubeconfig
+*console.log
