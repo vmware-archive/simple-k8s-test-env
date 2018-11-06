@@ -2,7 +2,7 @@
 Yakity (_**Y**et **A**nother **K**ubernetes **I**nstaller 
 **T**hing**Y**_) is:
 
-  * _For developers building and testing Kubernetes and core Kubernets components_
+  * _For developers building and testing Kubernetes and core Kubernetes components_
   * Capable of deploying *any* [version](https://github.com/akutz/yakity/wiki/Kubernetes-version) of Kubernetes (+1.10) on generic Linux distributions
   * Designed to deploy single-node, multi-node, and even multi-control plane node clusters
   * Able to deploy nodes on DHCP networks with support for both node FQDNs and IPv4 addresses
