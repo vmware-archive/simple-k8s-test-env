@@ -1,5 +1,17 @@
 #!/bin/sh
 
+# Yakity
+#
+# Copyright (c) 2018 VMware, Inc. All Rights Reserved.
+#
+# This product is licensed to you under the Apache 2.0 license (the "License").
+# You may not use this product except in compliance with the Apache 2.0 License.
+#
+# This product may include a number of subcomponents with separate copyright
+# notices and license terms. Your use of these subcomponents is subject to the
+# terms and conditions of the subcomponent's license, as noted in the LICENSE
+# file.
+
 # posix compliant
 # verified by https://www.shellcheck.net
 
@@ -182,6 +194,19 @@ ssh_cmd="${yak_dir}/ssh"
 if sys_cmd="$(command -v ssh 2>/dev/null)"; then
   cat <<EOF >"${ssh_cmd}"
 #!/bin/sh
+
+# Yakity
+#
+# Copyright (c) 2018 VMware, Inc. All Rights Reserved.
+#
+# This product is licensed to you under the Apache 2.0 license (the "License").
+# You may not use this product except in compliance with the Apache 2.0 License.
+#
+# This product may include a number of subcomponents with separate copyright
+# notices and license terms. Your use of these subcomponents is subject to the
+# terms and conditions of the subcomponent's license, as noted in the LICENSE
+# file.
+
 ${sys_cmd} -F ${ssh_config} "\${@}"
 EOF
   chmod 0755 "${ssh_cmd}"
@@ -195,6 +220,19 @@ scp_cmd="${yak_dir}/scp"
 if sys_cmd="$(command -v scp 2>/dev/null)"; then
   cat <<EOF >"${scp_cmd}"
 #!/bin/sh
+
+# Yakity
+#
+# Copyright (c) 2018 VMware, Inc. All Rights Reserved.
+#
+# This product is licensed to you under the Apache 2.0 license (the "License").
+# You may not use this product except in compliance with the Apache 2.0 License.
+#
+# This product may include a number of subcomponents with separate copyright
+# notices and license terms. Your use of these subcomponents is subject to the
+# terms and conditions of the subcomponent's license, as noted in the LICENSE
+# file.
+
 ${sys_cmd} -F ${ssh_config} "\${@}"
 EOF
   chmod 0755 "${scp_cmd}"
@@ -208,6 +246,19 @@ kubectl_cmd="${yak_dir}/kubectl"
 if sys_cmd="$(command -v kubectl)"; then
   cat <<EOF >"${kubectl_cmd}"
 #!/bin/sh
+
+# Yakity
+#
+# Copyright (c) 2018 VMware, Inc. All Rights Reserved.
+#
+# This product is licensed to you under the Apache 2.0 license (the "License").
+# You may not use this product except in compliance with the Apache 2.0 License.
+#
+# This product may include a number of subcomponents with separate copyright
+# notices and license terms. Your use of these subcomponents is subject to the
+# terms and conditions of the subcomponent's license, as noted in the LICENSE
+# file.
+
 ${sys_cmd} --kubeconfig "${kubeconfig}" "\${@}"
 EOF
   chmod 0755 "${kubectl_cmd}"
@@ -220,6 +271,19 @@ printf2 '  % -30s' '* turn-down'
 turn_down_cmd="${yak_dir}/turn-down"
 cat <<EOF >"${turn_down_cmd}"
 #!/bin/sh
+
+# Yakity
+#
+# Copyright (c) 2018 VMware, Inc. All Rights Reserved.
+#
+# This product is licensed to you under the Apache 2.0 license (the "License").
+# You may not use this product except in compliance with the Apache 2.0 License.
+#
+# This product may include a number of subcomponents with separate copyright
+# notices and license terms. Your use of these subcomponents is subject to the
+# terms and conditions of the subcomponent's license, as noted in the LICENSE
+# file.
+
 set -o pipefail
 
 # echo2 echoes the provided arguments to stderr.

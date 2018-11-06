@@ -40,3 +40,6 @@ There are several ways to provision a Kubernetes cluster with yakity:
 ## Todo
 * Better testing
 * Better documentaton
+
+## License
+Please the [LICENSE](LICENSE) file for information about this project's license.
