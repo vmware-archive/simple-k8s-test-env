@@ -179,9 +179,6 @@ elif [ "${cloud_provider_type}" = "external" ]; then
   datacenters        = "${vsphere_datacenter}"
 
 [VirtualCenter "${vsphere_server}"]
-
-[Network]
-  public-network     = "${vsphere_network}"
 EOF
 )
   secrets_conf=$(cat <<EOF | gzip -9c | base64 -w0

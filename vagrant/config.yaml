@@ -1,0 +1,7 @@
+---
+box:         ubuntu/xenial64
+cpu:         1
+mem:         1024
+nodes:       1
+controllers: 1
+both:        1

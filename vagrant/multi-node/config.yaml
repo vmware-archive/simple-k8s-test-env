@@ -1,8 +1,0 @@
----
-nodes:
-  - host: c01
-    type: controller
-  - host: c02
-    type: both
-  - host: w01
-    type: worker

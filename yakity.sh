@@ -332,9 +332,11 @@ if [ "${HOST_FQDN}" = "${HOST_NAME}" ]; then
   HOST_NAME=$(hostname -s) || fatal "failed to get host name"
 fi
 
-# shellcheck disable=SC2086
-IPV4_ADDRESS=$(ip route get ${IP_ROUTE_DEV} 1 | awk '{print $NF;exit}') || \
-  fatal "failed to get ipv4 address"
+if [ -z "${IPV4_ADDRESS}" ]; then
+  # shellcheck disable=SC2086
+  IPV4_ADDRESS=$(ip route get ${IP_ROUTE_DEV} 1 | awk '{print $NF;exit}') || \
+    fatal "failed to get ipv4 address"
+fi
 
 ################################################################################
 ##                                 Config                                     ##
@@ -482,6 +484,16 @@ SERVICE_NAME="${SERVICE_NAME:-${CLUSTER_NAME}}"
 
 # The FQDN used to access the K8s API server on the service network.
 SERVICE_FQDN="${SERVICE_NAME}.default.svc.${SERVICE_DOMAIN}"
+
+# Set to a truthy value to override the host name in the kubelet with
+# the FQDN of this host.
+HOST_NAME_OVERRIDE="${HOST_NAME_OVERRIDE:-false}"
+HOST_NAME_OVERRIDE=$(parse_bool "${HOST_NAME_OVERRIDE}")
+
+# Set to "false" to disable failing the kubelet if swap space is enabled.
+if [ -n "${FAIL_SWAP_ON}" ]; then
+  FAIL_SWAP_ON="$(parse_bool "${FAIL_SWAP_ON}")"
+fi
 
 # The name of the cloud provider to use.
 #CLOUD_PROVIDER=
@@ -2321,6 +2333,13 @@ tlsCertFile: /etc/ssl/kubelet.crt
 tlsPrivateKeyFile: /etc/ssl/kubelet.key
 EOF
 
+  if [ -n "${FAIL_SWAP_ON}" ]; then
+    _kubelet_opts="--fail-swap-on='${FAIL_SWAP_ON}'"
+  fi
+  if [ "${HOST_NAME_OVERRIDE}" = "true" ]; then
+    _kubelet_opts="${_kubelet_opts} --hostname-override='${HOST_FQDN}'"
+  fi
+
   cat <<EOF >/etc/default/kubelet
 KUBELET_OPTS="--allow-privileged \\
 --client-ca-file='${TLS_CA_CRT}'${EXT_CLOUD_PROVIDER_OPTS} \\
@@ -2328,14 +2347,12 @@ KUBELET_OPTS="--allow-privileged \\
 --config=/var/lib/kubelet/kubelet-config.yaml \\
 --container-runtime=remote \
 --container-runtime-endpoint=unix:///var/run/containerd/containerd.sock \\
---fail-swap-on=false \\
---hostname-override='${HOST_FQDN}' \\
 --image-pull-progress-deadline=2m \\
 --kubeconfig=/var/lib/kubelet/kubeconfig \\
 --network-plugin=cni \\
 --node-ip=${IPV4_ADDRESS} \\
 --register-node=true \\
---v=${LOG_LEVEL_KUBELET}"
+--v=${LOG_LEVEL_KUBELET} ${_kubelet_opts}"
 EOF
 
   cat <<EOF >/etc/systemd/system/kubelet.service
