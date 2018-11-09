@@ -17,14 +17,17 @@
 CONFIG=ENV['CONFIG'] || 'config.yaml'
 YAKITY_SH='../yakity.sh'
 YAKITY_SERVICE='yakity.service'
-TLS_CA_CRT='ca.crt'
-TLS_CA_KEY='ca.key'
-K8S_ADMIN_CRT='k8s-admin.crt'
-K8S_ADMIN_KEY='k8s-admin.key'
-KUBECONFIG=ENV['KUBECONFIG'] || 'kubeconfig'
 NEW_CA_SH='../hack/new-ca.sh'
 NEW_CERT_SH='../hack/new-cert.sh'
 NEW_KUBECONFIG_SH='../hack/new-kubeconfig.sh'
+VAGRANT_PROVIDER=ENV['VAGRANT_DEFAULT_PROVIDER'] || 'virtualbox'
+VAGRANT_DOTFILE_PATH=ENV['VAGRANT_DOTFILE_PATH'] || '.'
+TLS_CA_CRT="#{VAGRANT_DOTFILE_PATH}/ca.crt"
+TLS_CA_KEY="#{VAGRANT_DOTFILE_PATH}/ca.key"
+K8S_ADMIN_CRT="#{VAGRANT_DOTFILE_PATH}/k8s-admin.crt"
+K8S_ADMIN_KEY="#{VAGRANT_DOTFILE_PATH}/k8s-admin.key"
+KUBECONFIG="#{VAGRANT_DOTFILE_PATH}/machines/c01/#{VAGRANT_PROVIDER}/kubeconfig"
+DNSCONFIG="#{VAGRANT_DOTFILE_PATH}/machines/c01/#{VAGRANT_PROVIDER}/dnsconfig"
 
 # Load the config file if it exists.
 require 'yaml'
@@ -49,7 +52,7 @@ $num_workers = $num_nodes-$num_controllers
 $nodes = []
 for i in 1..$num_nodes do
   if (i <= $num_controllers)
-    node_type = i > $num_both ? "controller" : "both"
+    node_type = i <= ($num_controllers-$num_both) ? "controller" : "both"
     host_name = sprintf("c%02d", i)
   else
     node_type = "worker"
@@ -128,19 +131,24 @@ Vagrant.configure("2") do |config|
   config.vm.synced_folder ".", "/vagrant", disabled: true
   config.vm.network "private_network", type: "dhcp"
 
-  config.vm.provider "virtualbox" do |vb| 
-    vb.cpus =   $cpu
-    vb.memory = $mem
+  # Set the provider preference order.
+  config.vm.provider "virtualbox"
+  config.vm.provider "vmware_fusion"
 
-    # Make sure the first NIC has a "random" MAC address to ensure it is not
-    # the same MAC address as the other node
-    vb.customize ["modifyvm", :id, "--macaddress1", "auto"]
-
-    # Never allo the VM to use more than 50% of the CPU.
-    vb.customize ["modifyvm", :id, "--cpuexecutioncap", "50"]
+  config.vm.provider VAGRANT_PROVIDER do |p|
+    case VAGRANT_PROVIDER
+    when 'virtualbox'
+      p.cpus =   $cpu
+      p.memory = $mem
+      p.customize ["modifyvm", :id, "--macaddress1", "auto"]
+      p.customize ["modifyvm", :id, "--cpuexecutioncap", "50"]
+    when 'vmware_desktop', 'vmware_fusion'
+      p.vmx["numvcpus"] = $cpu
+      p.vmx["memsize"]  = $mem
+    end
   end
 
-  # Generate a kubeconfig that points to the first node.
+  # Generate the kubeconfig file.
   config.trigger.after :up do |trigger|
     trigger.info    = "Generating kubeconfig"
     trigger.only_on = /(?i)c01/
@@ -158,12 +166,32 @@ Vagrant.configure("2") do |config|
     }
   end
 
-  # Delete the kubeconfig when the first node is destroyed.
+  # Generate the DNS config file.
+  config.trigger.after :up do |trigger|
+    trigger.info    = "Generating DNS config"
+    trigger.only_on = /(?i)c01/
+    trigger.run     = {
+      :inline => <<-SHELL
+        /bin/sh -c 'echo "$(vagrant port --guest 53 c01)" > "#{DNSCONFIG}"'
+      SHELL
+    }
+  end
+
+  # Delete the kubeconfig file when the first node is destroyed.
   config.trigger.after :destroy do |trigger|
     trigger.info    = "Deleting kubeconfig"
     trigger.only_on = /(?i)c01/
     trigger.run     = {
       :inline => "/bin/rm -f '#{KUBECONFIG}'"
+    }
+  end
+
+  # Delete the DNS config file when the first node is destroyed.
+  config.trigger.after :destroy do |trigger|
+    trigger.info    = "Deleting DNS config"
+    trigger.only_on = /(?i)c01/
+    trigger.run     = {
+      :inline => "/bin/rm -f '#{DNSCONFIG}'"
     }
   end
 

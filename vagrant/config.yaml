@@ -1,5 +1,5 @@
 ---
-box:         ubuntu/xenial64
+box:         bento/ubuntu-16.04
 cpu:         1
 mem:         1024
 nodes:       1
