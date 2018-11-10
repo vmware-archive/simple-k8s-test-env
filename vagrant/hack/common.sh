@@ -30,6 +30,10 @@ usage: ${0} FLAGS ${PROGRAM}
   with the remainder of the command line.
 
 FLAGS
+  -k      K8S   The version of Kubernetes to install. Please see the section
+                KUBERNETES VERSION for accepted versions.
+                The default value is "release/stable".
+
   -b      BOX   Valid box types include: "photon", "centos", and "ubuntu".
                 The default value is "ubuntu".
 
@@ -54,6 +58,53 @@ FLAGS
                   c02  Controller+Worker
                   w01  Worker
 
+KUBERNETES VERSION
+  The -k flag specifies the version of Kubernetes to install.
+
+  If the value "local" is used, the following local paths are checked
+  and replaces "local" as the Kuberentes version if they exist:
+
+    * ${GOPATH}/src/k8s.io/kubernetes
+    * ${HOME}/go/src/k8s.io/kubernetes
+  
+  If the Kubernetes version is set to a filesystem path then this program
+  mounts the path into the VM(s) as "/var/lib/kubernetes/install/local" and
+  set the Kubernetes version to "file:///var/lib/kubernetes/install/local".
+  
+  The yakity process executing inside of the VM(s) checks to see if the
+  configured Kubernetes version begins with "file://". If it does, yakity
+  processes the contents of the directory using the ascribed manner:
+
+    1.  An attempt is made to locate the following release tarballs:
+
+          * kubernetes-client-linux-amd64.tar.gz
+          * kubernetes-node-linux-amd64.tar.gz
+          * kubernetes-server-linux-amd64.tar.gz
+          * kubernetes-test-linux-amd64.tar.gz
+
+    2.  An attempt is made to locate the following binaries:
+
+          * kubectl
+          * kube-apiserver
+          * kube-controller-manager
+          * kube-scheduler
+          * kubelet
+          * kube-proxy
+          * e2e.test
+
+  If multiple copies of the same file are discovered the newest copy is used.
+  Files from step two will overwrite their equivalents inside of any tarballs
+  discovered in step one as long as the copy from step two is newer.
+
+  Plesae note that only the CentOS and Ubuntu box types support deploying 
+  a local Kubernetes build. This is because there is no PhotonOS box in the
+  Vagrant registry that includes support for mounting shared folders. If
+  someone would like to provide such a box, then PhotonOS could also support
+  deploying Kubernetes using local development builds.
+
+  To read more about the valid versions that may be deployed, please see
+  https://github.com/akutz/yakity/wiki/Kubernetes-version.
+
 NUMBER OF NODES
   The -1, -2, and -3 flags are used to set the number of nodes in the cluster.
   The flags are mutually exclusive, and only the first of them that appears on
@@ -66,8 +117,12 @@ export usage
 
 fatal() { echo "${@}" 1>&2 && exit 1; }; export fatal
 
-while getopts ":b:c:m:p:h123" opt; do
+while getopts ":k:b:c:m:p:h123" opt; do
   case "${opt}" in
+  k)
+    flags=true
+    k8s="${OPTARG}"
+    ;;
   b)
     flags=true
     box="${OPTARG}"
@@ -122,10 +177,23 @@ instance="${vagrant_home}/instance"
 config="${instance}/config.yaml"
 
 if [ "${flags}" = "true" ] || [ ! -e "${config}" ]; then
+  k8s="${k8s:-release/stable}"
+  if [ "${k8s}" = "local" ]; then
+    if [ -n "${GOPATH}" ]; then
+      k8s="${GOPATH}/src/k8s.io/kubernetes"
+    else
+      k8s="${HOME}/go/src/k8s.io/kubernetes"
+    fi
+    if [ -d "${k8s}" ]; then
+      k8s=local
+    fi
+  fi
+
   box="$(validate_box "${box:-ubuntu}")"
   case "${box}" in
   centos)
-    box='centos/7'
+    #box='centos/7'
+    box='bento/centos-7.5'
     ;;
   photon)
     box='vmware/photon'
@@ -158,6 +226,7 @@ if [ "${flags}" = "true" ] || [ ! -e "${config}" ]; then
   config="$(mktemp)"
   cat <<EOF >"${config}"
 ---
+k8s:         ${k8s}
 box:         ${box}
 cpu:         ${cpu}
 mem:         ${mem}

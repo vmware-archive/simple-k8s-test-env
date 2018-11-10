@@ -28,6 +28,10 @@ K8S_ADMIN_CRT="#{VAGRANT_DOTFILE_PATH}/k8s-admin.crt"
 K8S_ADMIN_KEY="#{VAGRANT_DOTFILE_PATH}/k8s-admin.key"
 KUBECONFIG="#{VAGRANT_DOTFILE_PATH}/machines/c01/#{VAGRANT_PROVIDER}/kubeconfig"
 DNSCONFIG="#{VAGRANT_DOTFILE_PATH}/machines/c01/#{VAGRANT_PROVIDER}/dnsconfig"
+K8S_RELEASE_LCL=File.join(
+  ENV['GOPATH'] || "#{ENV['HOME']}/go", 'src/k8s.io/kubernetes')
+K8S_RELEASE_REM='/var/lib/kubernetes/install/local'
+
 
 # Load the config file if it exists.
 require 'yaml'
@@ -40,6 +44,7 @@ end
 require 'yaml'
 $config = YAML.load_file(CONFIG)
 
+$k8s = $config['k8s'] || abort('k8s required')
 $box = $config['box'] || abort('box required')
 $cpu = $config['cpu'] || abort('cpu required')
 $mem = $config['mem'] || abort('mem required')
@@ -47,6 +52,16 @@ $num_nodes = $config['nodes'] || abort('nodes required')
 $num_controllers = $config['controllers'] || abort('controllers required')
 $num_both = $config['both'] || abort('both required')
 $num_workers = $num_nodes-$num_controllers
+
+# If $k8s is set to "local" then look in the default folder for the
+# staged tarballs.
+if ($k8s == 'local')
+  if File.exist?(K8S_RELEASE_LCL)
+    $k8s=K8S_RELEASE_LCL
+  else
+    abort("invalid k8s=#{$k8s}")
+  end
+end
 
 # Create the node definitions.
 $nodes = []
@@ -128,8 +143,19 @@ end
 
 Vagrant.configure("2") do |config|
   config.vm.box = $box
-  config.vm.synced_folder ".", "/vagrant", disabled: true
   config.vm.network "private_network", type: "dhcp"
+
+  # Disable the default synced folder.
+  config.vm.synced_folder ".", "/vagrant", disabled: true
+
+  # CentOS and Ubuntu support deploying Kubernetes from a local staging
+  # directory with the tarballs.
+  if (/(?i)centos|ubuntu/ =~ $box and File.exist?($k8s))
+    $k8s_version="file://#{K8S_RELEASE_REM}"
+    config.vm.synced_folder File.absolute_path($k8s), K8S_RELEASE_REM
+  else
+    $k8s_version=$k8s
+  end
 
   # Set the provider preference order.
   config.vm.provider "virtualbox"
@@ -204,9 +230,9 @@ Vagrant.configure("2") do |config|
 
       # Forward some ports for the control plane nodes.
       if (/(?i)^both|controller$/ =~ node_config[:type])
-        node.vm.network "forwarded_port", 
+        node.vm.network "forwarded_port",
           guest: 443, host: 6443, auto_correct: true
-        node.vm.network "forwarded_port", 
+        node.vm.network "forwarded_port",
           guest:  53, host: 6553, auto_correct: true
       end
 
@@ -251,6 +277,7 @@ Vagrant.configure("2") do |config|
           ip4=$(ip route get dev "${nic}" 1 | awk '{print $NF;exit}')
 
           cat <<EOF >/etc/default/yakity
+K8S_VERSION="#{$k8s_version}"
 IPV4_ADDRESS="${ip4}"
 ETCD_DISCOVERY="#{$etcd_disco}"
 NUM_NODES="#{$num_nodes}"

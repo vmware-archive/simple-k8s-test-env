@@ -783,6 +783,10 @@ get_k8s_artifacts_url() {
   # artifact prefix.
   echo "${ver}" | grep -iq '^https\{0,1\}://' && echo "${ver}" && return 0
 
+  # If the version begins with file:// then the version *is* the
+  # artifact prefix.
+  echo "${ver}" | grep -iq '^file://' && echo "${ver}" && return 0
+
   # Determine if the version points to a release or a CI build.
   url=https://storage.googleapis.com/kubernetes-release
 
@@ -823,11 +827,15 @@ reverse_ipv4_address() {
     tr '\n' '.' | sed 's/.$//'
 }
 
-# Executes a HEAD request against a URL and verfieis the request returns
+# Executes a HEAD request against a URL and verifies the request returns
 # the provided HTTP status and optional response message.
 http_stat() {
-  ${CURL} -sSI "${3}" | grep -q \
-    '^HTTP/[1-2]\(\.[0-9]\)\{0,1\} '"${1}"'[[:space:]]\{0,\}\('"${2}"'\)\{0,1\}[[:space:]]\{0,\}$'
+  if echo "${3}" | grep -q '^file://'; then
+    [ -f "$(echo "${3}" | sed 's~^file://~~')" ]
+  else
+    ${CURL} -sSI "${3}" | grep -q \
+      '^HTTP/[1-2]\(\.[0-9]\)\{0,1\} '"${1}"'[[:space:]]\{0,\}\('"${2}"'\)\{0,1\}[[:space:]]\{0,\}$'
+  fi
 }
 http_200() { http_stat 200                "OK" "${1}"; }
 http_204() { http_stat 204        "No Content" "${1}"; }
@@ -1598,6 +1606,12 @@ create_dns_entries() {
     { error "failed to create DNS A-record"; return; }
   etcdctl get "/skydns/${fqdn_rev}"
 
+  # Create the TXT record for this host that returns the node type.
+  etcdctl put "/skydns/${fqdn_rev}/txt/node-type" \
+    '{"text":"'"${NODE_TYPE}"'"}' || \
+    { error "failed to create DNS TXT-record for node type"; return; }
+  etcdctl get "/skydns/${fqdn_rev}/txt/node-type"
+
   # Create the reverse lookup record for this host.
   debug "creating DNS reverse lookup record for this host"
   etcdctl put "/skydns/arpa/in-addr/${addr_slashes}" '{"host":"'"${HOST_FQDN}"'"}' || \
@@ -1613,6 +1627,18 @@ create_dns_entries() {
     debug "created external FQDN DNS CNAME record"
     etcdctl get "/skydns/${external_fqdn_rev}"
   fi
+
+  # Create a text record at the root of the cluster that contains the
+  # host name of all of the members of the cluster.
+  _rev_domain_fqdn="$(reverse_fqdn "${NETWORK_DOMAIN}")"
+  etcdctl put "/skydns/${_rev_domain_fqdn}/txt/cluster/num-nodes" \
+    '{"text":"'"${NUM_NODES}"'"}' || \
+    { error "failed to create DNS TXT-record for NUM_NODES"; return; }
+  etcdctl get "/skydns/${_rev_domain_fqdn}/txt/cluster/num-nodes"
+  etcdctl put "/skydns/${_rev_domain_fqdn}/txt/cluster/num-controllers" \
+    '{"text":"'"${NUM_CONTROLLERS}"'"}' || \
+    { error "failed to create DNS TXT-record for NUM_CONTROLLERS"; return; }
+  etcdctl get "/skydns/${_rev_domain_fqdn}/txt/cluster/num-controllers"
 
   debug "created DNS entries"
 }
@@ -3977,6 +4003,69 @@ create_pod_net_routes() {
 ################################################################################
 ##                           Download Binaries                                ##
 ################################################################################
+
+# This function returns the newest file of a specified type that matches the
+# provided pattern.
+#
+# ARGS
+#  $1 The root of the search
+#  $2 The type to find
+#  $3 The pattern to match
+#
+# WORKFLOW
+#  1. find
+#     Do a recursive search of the current directory for all files that
+#     match the provided pattern.
+#
+#  2. file
+#     Use the file command to print the matching files' type information.
+#
+#  3. grep
+#     Keep the files that match the provided type.
+#
+#  4. awk
+#     Keep only the file name
+#
+#  5. tr
+#     Replace the newlines in the output with the null character in order to
+#     give the list to the xargs program
+#
+#  6. xargs
+#     Treat each element of the file list as an argument to the "ls" command
+#
+#  7. ls
+#     Sort the files in descending order according to their MTIME
+#
+#  8. head
+#     Prints the first element in the list -- the newest file
+find_newest() {
+  set +e
+  find "${1}" -name "${3}" -type f -exec file {} \; | \
+    { grep -i "${2}" || true; } | \
+    awk -F: '{print $1}' | \
+    tr '\n' '\0' | \
+    xargs -0 ls -1 -t | \
+    head -n 1
+  set -e
+}
+
+file_nt() {
+  [ -e "${2}" ] || return 0
+  [ -n "$(find -L "${1}" -prune -newer "${2}")" ];
+}
+
+strip_file_uri() { echo "${1}" | sed 's~^file://~~'; }
+
+replace_if_newer() {
+  _src="${1}"
+  _tgt="${BIN_DIR}/$(basename "${_src}")"
+
+  if [ -e "${_src}" ] && file_nt "${_src}" "${_tgt}"; then
+    cp -f "${_src}" "${_tgt}"
+    info "replacing older ${_tgt} with newer ${_src}"
+  fi
+}
+
 download_cni_plugins() {
   if [ -f "/opt/bin/cni/loopback" ]; then
     info "already downloaded CNI plug-ins"; return
@@ -4096,56 +4185,207 @@ download_jq() {
   debug "downloaded ${url}"
 }
 
+KUBE_CLIENT_TGZ="kubernetes-client-linux-amd64.tar.gz"
+KUBE_NODE_TGZ="kubernetes-node-linux-amd64.tar.gz"
+KUBE_SERVER_TGZ="kubernetes-server-linux-amd64.tar.gz"
+KUBE_TEST_TGZ="kubernetes-test.tar.gz"
+
+KUBE_DOWNLOAD_DIR=/var/lib/kubernetes/install/remote
+KUBE_DOWNLOAD_CLIENT="${KUBE_DOWNLOAD_DIR}/${KUBE_CLIENT_TGZ}"
+KUBE_DOWNLOAD_NODE="${KUBE_DOWNLOAD_DIR}/${KUBE_NODE_TGZ}"
+KUBE_DOWNLOAD_SERVER="${KUBE_DOWNLOAD_DIR}/${KUBE_SERVER_TGZ}"
+KUBE_DOWNLOAD_TEST="${KUBE_DOWNLOAD_DIR}/${KUBE_TEST_TGZ}"
+
+download_kubernetes_client() {
+  if [ -f "${BIN_DIR}/kubectl" ]; then
+    info "already downloaded kubernetes client"; return
+  fi
+
+  # If the Kubernetes artifact prefix begins with "file://" then the
+  # bits to install Kubernetes are supposed to be available locally.
+  if ! echo "${K8S_ARTIFACT_PREFIX}" | grep -q '^file://'; then
+    mkdir -p "${KUBE_DOWNLOAD_DIR}"
+    url="${K8S_ARTIFACT_PREFIX}/${KUBE_CLIENT_TGZ}"
+    http_ok "${url}" || { error "could not stat ${url}"; return; }
+    info "client: downloading ${url}"
+    ${CURL} -Lo "${KUBE_DOWNLOAD_CLIENT}" "${url}" || \
+      { error "failed to dowload ${url} to ${KUBE_DOWNLOAD_CLIENT}"; return ; }
+    _k8s_download_dir="${KUBE_DOWNLOAD_DIR}"
+  else
+    _k8s_download_dir="$(strip_file_uri "${K8S_ARTIFACT_PREFIX}")"
+    info "client: using local bits ${_k8s_download_dir}"
+  fi
+
+  _tarball=$(find_newest \
+    "${_k8s_download_dir}" gzip "${KUBE_CLIENT_TGZ}") || \
+    { error "failed to find client tarball"; return; }
+  _kubectl_bin=$(find_newest "${_k8s_download_dir}" elf kubectl) || \
+    { error "failed to find client binary: kubectl"; return; }
+
+  # If the tarball exists and it's newer than at least one of the binaries,
+  # then inflate the tarball.
+  if [ -e "${_tarball}" ] && file_nt "${_tarball}" "${_kubectl_bin}"; then
+    tar xzvC "${BIN_DIR}" \
+      --strip-components=3 \
+      kubernetes/client/bin/kubectl \
+      <"${_tarball}"
+    exit_code="${?}" && \
+      [ "${exit_code}" -gt "1" ] && \
+      { error "failed to inflate ${_tarball}" "${exit_code}"; return; }
+    info "inflated ${_tarball}"
+  fi
+
+  replace_if_newer "${_kubectl_bin}" || \
+    { error "failed to replace kubectl"; return; }
+
+  return 0
+}
+
 download_kubernetes_node() {
-  if [ -f "/opt/bin/kubelet" ]; then
+  if [ -f "${BIN_DIR}/kubelet" ] && [ -f "${BIN_DIR}/kube-proxy" ]; then
     info "already downloaded kubernetes node"; return
   fi
-  url="${K8S_ARTIFACT_PREFIX}/kubernetes-node-linux-amd64.tar.gz"
-  http_ok "${url}" || { error "could not stat ${url}"; return; }
-  info "downloading ${url}"
-  ${CURL} -L "${url}" | tar xzvC "${BIN_DIR}" \
-    --strip-components=3 --wildcards  \
-    --exclude=kubernetes/node/bin/*.tar \
-    --exclude=kubernetes/node/bin/*.docker_tag \
-    'kubernetes/node/bin/*'
-  exit_code="${?}" && \
-    [ "${exit_code}" -gt "1" ] && \
-    { error "failed to download ${url}" "${exit_code}"; return; }
-  debug "downloaded ${url}"
+
+  # If the Kubernetes artifact prefix begins with "file://" then the
+  # bits to install Kubernetes are supposed to be available locally.
+  if ! echo "${K8S_ARTIFACT_PREFIX}" | grep -q '^file://'; then
+    mkdir -p "${KUBE_DOWNLOAD_DIR}"
+    url="${K8S_ARTIFACT_PREFIX}/${KUBE_NODE_TGZ}"
+    http_ok "${url}" || { error "could not stat ${url}"; return; }
+    info "node: downloading ${url}"
+    ${CURL} -Lo "${KUBE_DOWNLOAD_NODE}" "${url}" || \
+      { error "failed to dowload ${url} to ${KUBE_DOWNLOAD_NODE}"; return ; }
+    _k8s_download_dir="${KUBE_DOWNLOAD_DIR}"
+  else
+    _k8s_download_dir="$(strip_file_uri "${K8S_ARTIFACT_PREFIX}")"
+    info "node: using local bits ${_k8s_download_dir}"
+  fi
+
+  _tarball=$(find_newest \
+    "${_k8s_download_dir}" gzip "${KUBE_NODE_TGZ}") || \
+    { error "failed to find node tarball"; return; }
+  _kubelet_bin=$(find_newest "${_k8s_download_dir}" elf kubelet) || \
+    { error "failed to find node binary: kubelet"; return; }
+  _kube_proxy_bin=$(find_newest "${_k8s_download_dir}" elf kube-proxy) || \
+    { error "failed to find node binary: kube-proxy"; return; }
+
+  # If the tarball exists and it's newer than at least one of the binaries,
+  # then inflate the tarball.
+  if [ -e "${_tarball}" ] && \
+    { file_nt "${_tarball}" "${_kubelet_bin}" || \
+      file_nt "${_tarball}" "${_kube_proxy_bin}"; }; then
+
+    tar xzvC "${BIN_DIR}" \
+      --strip-components=3 \
+      kubernetes/node/bin/kubelet \
+      kubernetes/node/bin/kube-proxy \
+      <"${_tarball}"
+    exit_code="${?}" && \
+      [ "${exit_code}" -gt "1" ] && \
+      { error "failed to inflate ${_tarball}" "${exit_code}"; return; }
+    info "inflated ${_tarball}"
+  fi
+
+  replace_if_newer "${_kubelet_bin}" || \
+    { error "failed to replace kubelet"; return; }
+  replace_if_newer "${_kube_proxy_bin}"  || \
+    { error "failed to replace kube-proxy"; return; }
+
   return 0
 }
 
 download_kubernetes_server() {
-  if [ -f "/opt/bin/kube-apiserver" ]; then
+  if [ -f "${BIN_DIR}/kube-apiserver" ] && \
+    [ -f "${BIN_DIR}/kube-controller-manager" ] && \
+    [ -f "${BIN_DIR}/kube-scheduler" ]; then
     info "already downloaded kubernetes server"; return
   fi
-  url="${K8S_ARTIFACT_PREFIX}/kubernetes-server-linux-amd64.tar.gz"
-  http_ok "${url}" || { error "could not stat ${url}"; return; }
-  info "downloading ${url}"
-  ${CURL} -L "${url}" | tar xzvC "${BIN_DIR}" \
-    --strip-components=3 --wildcards \
-    --exclude=kubernetes/server/bin/*.tar \
-    --exclude=kubernetes/server/bin/*.docker_tag \
-    'kubernetes/server/bin/*'
-  exit_code="${?}" && \
-    [ "${exit_code}" -gt "1" ] && \
-    { error "failed to download ${url}" "${exit_code}"; return; }
-  debug "downloaded ${url}"
+
+  # If the Kubernetes artifact prefix begins with "file://" then the
+  # bits to install Kubernetes are supposed to be available locally.
+  if ! echo "${K8S_ARTIFACT_PREFIX}" | grep -q '^file://'; then
+    mkdir -p "${KUBE_DOWNLOAD_DIR}"
+    url="${K8S_ARTIFACT_PREFIX}/${KUBE_SERVER_TGZ}"
+    http_ok "${url}" || { error "could not stat ${url}"; return; }
+    info "server: downloading ${url}"
+    ${CURL} -Lo "${KUBE_DOWNLOAD_SERVER}" "${url}" || \
+      { error "failed to dowload ${url} to ${KUBE_DOWNLOAD_SERVER}"; return ; }
+    _k8s_download_dir="${KUBE_DOWNLOAD_DIR}"
+  else
+    _k8s_download_dir="$(strip_file_uri "${K8S_ARTIFACT_PREFIX}")"
+    info "server: using local bits ${_k8s_download_dir}"
+  fi
+
+  _tarball=$(find_newest \
+    "${_k8s_download_dir}" gzip "${KUBE_SERVER_TGZ}") || \
+    { error "failed to find server tarball"; return; }
+  _kube_api_bin=$(find_newest "${_k8s_download_dir}" elf kube-apiserver) || \
+    { error "failed to find server binary: kube-apiserver"; return; }
+  _kube_ctl_mgr=$(find_newest "${_k8s_download_dir}" elf kube-controller-manager) || \
+    { error "failed to find server binary: kube-controller-manager"; return; }
+  _kube_scheduler=$(find_newest "${_k8s_download_dir}" elf kube-scheduler) || \
+    { error "failed to find server binary: kube-scheduler"; return; }
+
+  # If the tarball exists and it's newer than at least one of the binaries,
+  # then inflate the tarball.
+  if [ -e "${_tarball}" ] && \
+    { file_nt "${_tarball}" "${_kube_api_bin}" || \
+      file_nt "${_tarball}" "${_kube_ctl_mgr}" || \
+      file_nt "${_tarball}" "${_kube_scheduler}"; }; then
+
+    tar xzvC "${BIN_DIR}" \
+      --strip-components=3 \
+      kubernetes/server/bin/kube-apiserver \
+      kubernetes/server/bin/kube-controller-manager \
+      kubernetes/server/bin/kube-scheduler \
+      <"${_tarball}"
+    exit_code="${?}" && \
+      [ "${exit_code}" -gt "1" ] && \
+      { error "failed to inflate ${_tarball}" "${exit_code}"; return; }
+    info "inflated ${_tarball}"
+  fi
+
+  replace_if_newer "${_kube_api_bin}" || \
+    { error "failed to replace kube-apiserver"; return; }
+  replace_if_newer "${_kube_ctl_mgr}"  || \
+    { error "failed to replace kube-controller-manager"; return; }
+  replace_if_newer "${_kube_scheduler}"  || \
+    { error "failed to replace kube-scheduler"; return; }
+
   return 0
 }
 
 download_kubernetes_test() {
-  if i=$(find /var/lib/kubernetes/platforms -name 'e2e.test' -type f \
-    2>/dev/null | wc -l) \
-    && [ "${i}" -gt "0" ]; then
+  if [ -e "/var/lib/kubernetes/platforms/linux/amd64/e2e.test" ]; then
     info "already downloaded kubernetes test"; return
   fi
+
   [ "${INSTALL_CONFORMANCE_TESTS}" = "true" ] || return 0
-  url="${K8S_ARTIFACT_PREFIX}/kubernetes-test.tar.gz"
-  http_ok "${url}" || { error "could not stat ${url}"; return; }
-  info "downloading ${url}"
-  ${CURL} -L "${url}" | tar xzvC /var/lib || error "failed to download ${url}"
-  debug "downloaded ${url}"
+
+  # If the Kubernetes artifact prefix begins with "file://" then the
+  # bits to install Kubernetes are supposed to be available locally.
+  if ! echo "${K8S_ARTIFACT_PREFIX}" | grep -q '^file://'; then
+    mkdir -p "${KUBE_DOWNLOAD_DIR}"
+    url="${K8S_ARTIFACT_PREFIX}/${KUBE_TEST_TGZ}"
+    http_ok "${url}" || { error "could not stat ${url}"; return; }
+    info "test: downloading ${url}"
+    ${CURL} -Lo "${KUBE_DOWNLOAD_TEST}" "${url}" || \
+      { error "failed to dowload ${url} to ${KUBE_DOWNLOAD_TEST}"; return ; }
+    _k8s_download_dir="${KUBE_DOWNLOAD_DIR}"
+  else
+    _k8s_download_dir="$(strip_file_uri "${K8S_ARTIFACT_PREFIX}")"
+    info "test: using local bits ${_k8s_download_dir}"
+  fi
+
+  _tarball=$(find_newest \
+    "${_k8s_download_dir}" gzip "${KUBE_TEST_TGZ}") || \
+    { error "failed to find test tarball"; return; }
+
+  tar xzvC "/var/lib" <"${_tarball}" || \
+    { error "failed to inflate ${_tarball}" "${exit_code}"; return; }
+  info "inflated ${_tarball}"
+
+  return 0
 }
 
 download_nginx() {
@@ -4199,8 +4439,9 @@ download_runsc() {
 
 download_binaries() {
   # Download binaries found on both control-plane and worker nodes.
-  download_jq   || { error "failed to download jq"; return; }
-  download_etcd || { error "failed to download etcd"; return; }
+  download_jq                || { error "failed to download jq"; return; }
+  download_etcd              || { error "failed to download etcd"; return; }
+  download_kubernetes_client || { error "failed to download kubernetes client"; return; }
 
   # Download binaries found only on control-plane nodes.
   if [ ! "${NODE_TYPE}" = "worker" ]; then
@@ -4219,6 +4460,10 @@ download_binaries() {
     download_runsc           || { error "failed to download runsc"; return; }
     download_cni_plugins     || { error "failed to download cni-plugns"; return; }
   fi
+
+  # Remove all of the potential tarballs created from downloading Kubernetes
+  # from remote locations.
+  rm -f -- "${KUBE_DOWNLOAD_DIR}"/*
 
   # Mark all the files in /opt/bin directory:
   # 1. Executable
@@ -4358,7 +4603,7 @@ print_all_node_info || fatal "failed to print all node info"
 
 # Creates the DNS entries in etcd that the CoreDNS servers running
 # on the controller nodes will use.
-create_dns_entries || fatal "failed to created DNS entries in etcd"
+create_dns_entries || fatal "failed to create DNS entries in etcd"
 
 # If this host uses systemd-resolved, then this step will disable and
 # mask the service. This is so port 53 is available for CoreDNS.

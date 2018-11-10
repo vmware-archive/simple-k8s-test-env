@@ -99,6 +99,70 @@ Please follow these steps to provision a Kubernetes cluster with Vagrant and yak
     $ hack/vagrant.sh destroy -f
     ```
 
+## Deploying local Kubernetes builds
+The program `hack/vagrant.sh` accepts the flag `-k` in order to specify the
+[version](https://github.com/akutz/yakity/wiki/Kubernetes-version) of
+Kubernetes to install. However, the flag may *also* be used to deploy a 
+**local** build of Kubernetes!
+
+```shell
+$ hack/vagrant.sh -p fusion -b ubuntu -3 -k "${GOPATH}/src/k8s.io/kubernetes" up
+```
+
+The above command creates a three-node Kubernetes cluster using Ubuntu
+boxes on VMware Fusion. The cluster is built using files found in the directory
+specified with the `-k` flag.
+
+### The keyword `local`
+The keyword `local` may be used as a shortcut to reference the Kubernetes 
+source tree in the `GOPATH`. For example, the previous command could be
+rewritten like so:
+
+```shell
+$ hack/vagrant.sh -p fusion -b ubuntu -3 -k local up
+```
+
+### Bring your own builds
+Yakity does not build Kubernetes from source. In fact, the directory specified
+with the `-k` flag doesn't have to be a Kubernetes source directory at all.
+It's simply the case that the files for which yakity searches are *likely* to be
+found in the Kubernetes source directory. Yakity performs a recursive search
+of the directory looking for any of the following file groups:
+
+**Client**
+* `kubernetes-client-linux-amd64.tar.gz`
+* `kubectl`
+
+**Node**
+* `kubernetes-node-linux-amd64.tar.gz`
+* `kubelet`
+* `kube-proxy`
+
+**Server**
+* `kubernetes-server-linux-amd64.tar.gz`
+* `kube-apiserver`
+* `kube-controller-manager`
+* `kube-scheduler`
+
+**Test**
+* `kubernetes-test-linux-amd64.tar.gz`
+* `e2e.test`
+
+If any of the discovered tarballs in a group is newer than discovered 
+programs from that group, then the tarball is inflated. Next each 
+discovered group is checked to see if *it* is newer than its analogue
+from the tarball.
+
+If multiple copies of the same file (tarball or program) are discovered,
+only the newest copy is used in the above comparison.
+
+### Linux distributions that support deploying local Kubernetes builds
+Plesae note that only the CentOS and Ubuntu box types support deploying 
+a local Kubernetes build. This is because there is no PhotonOS box in the
+Vagrant registry that includes support for mounting shared folders. If
+someone would like to provide such a box, then PhotonOS could also support
+deploying Kubernetes using local development builds.
+
 ## Using `dig`, `kubectl`, and `vagrant`
 There are three scripts that wrap some useful commands:
 * `hack/dig.sh`
@@ -107,6 +171,10 @@ There are three scripts that wrap some useful commands:
 
 Each of the above commands accept the same set of command line arguments:
 ```shell
+  -k      K8S   The version of Kubernetes to install. Please see the section
+                KUBERNETES VERSION for accepted versions.
+                The default value is "release/stable".
+
   -b      BOX   Valid box types include: "photon", "centos", and "ubuntu".
                 The default value is "ubuntu".
 
@@ -137,6 +205,7 @@ Whenever any of these commands are invoked, the command line arguments are used
 to build a YAML configuration file that describes the cluster. For example:
 ```yaml
 ---
+k8s:         release/stable
 box:         bento/ubuntu-16.04
 cpu:         1
 mem:         1024
