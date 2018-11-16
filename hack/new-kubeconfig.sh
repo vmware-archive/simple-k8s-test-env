@@ -43,7 +43,7 @@ cat <<EOF >"${KUBECONFIG}"
 apiVersion: v1
 clusters:
 - cluster:
-    certificate-authority-data: $(base64 -w0 <"${TLS_CA_CRT}")
+    certificate-authority-data: $({ base64 -w0 || base64; } <"${TLS_CA_CRT}")
     server: ${SERVER}
   name: ${CLUSTER}
 contexts:
@@ -57,8 +57,8 @@ preferences: {}
 users:
 - name: ${USER}
   user:
-    client-certificate-data: $(base64 -w0 <"${TLS_CRT}")
-    client-key-data: $(base64 -w0 <"${TLS_KEY}")
+    client-certificate-data: $({ base64 -w0 || base64; } <"${TLS_CRT}")
+    client-key-data: $({ base64 -w0 || base64; } <"${TLS_KEY}")
 EOF
 
 exit 0
