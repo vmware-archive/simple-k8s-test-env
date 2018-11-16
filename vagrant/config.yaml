@@ -1,8 +1,0 @@
----
-k8s:         release/stable
-box:         bento/ubuntu-16.04
-cpu:         1
-mem:         1024
-nodes:       1
-controllers: 1
-both:        1

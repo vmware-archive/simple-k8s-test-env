@@ -4,11 +4,10 @@ on several different Linux distributions using Vagrant.
 
 ## Quick start
 This example illustrates how to provision a Kubernetes cluster with three nodes
-on Ubuntu running on VirtualBox:
+on Photon running on VirtualBox:
 ```shell
-$ git clone https://github.com/akutz/yakity /tmp/yakity && \
-  cd /tmp/yakity/vagrant && \
-  hack/vagrant.sh -b photon -3 up
+$ git clone https://github.com/akutz/yakity && \
+  yakity/vagrant/hack/vagrant.sh -b photon -3 -- up
 ```
 
 ## Support matrix
@@ -36,7 +35,7 @@ Please follow these steps to provision a Kubernetes cluster with Vagrant and yak
 3. The program `hack/vagrant.sh` makes turning up clusters with Vagrant and yakity even simpler. Type `hack/vagrant.sh -h` to print a full list of the program's capabilities. Use it to deploy a three-node cluster on Photon:
 
     ```shell
-    $ hack/vagrant.sh -b photon -3 up
+    $ hack/vagrant.sh -b photon -3 -- up
     ```
 
     The above command deploys and initializes three VMs:
@@ -47,22 +46,9 @@ Please follow these steps to provision a Kubernetes cluster with Vagrant and yak
     | `c02` | A control plane node on which workloads may be scheduled |
     | `w01` | A dedicated worker node |
 
-    The command also performs the following actions:
-    
-    * The following actions occur once, regardless of the number of nodes:
-      * Generates a self-signed, x509 certificate authority
-      * Generates an x509 certificate/key pair for the K8s admin user
-      * Generates a kubeconfig for the K8s admin user
-    * The following steps occur per node:
-      * Creates the VM
-      * Initializes the guest according to distribution specific requirements
-      * Copies several files to the guest
-      * Initializes the yakity environment
-      * Starts yakity
-
 4. Once all of the nodes have been created and provisioned, the following command can be used to follow the yakity process as it deploys Kubernetes:
     ```shell
-    $ hack/vagrant.sh ssh c01 -c 'tail -f /var/log/yakity/yakity.log'
+    $ hack/vagrant.sh -- ssh c01 -c 'tail -f /var/log/yakity/yakity.log'
     ```
 
     The other nodes may be monitored with the same command, just replace `c01` with either `c02` or `w01`.
@@ -89,14 +75,14 @@ Please follow these steps to provision a Kubernetes cluster with Vagrant and yak
     ```
 
     ```shell
-    $ hack/kubectl.sh -n kube-system get pods
+    $ hack/kubectl.sh -- -n kube-system get pods
     NAME                        READY     STATUS    RESTARTS   AGE
     kube-dns-67b548dcff-mtkfv   3/3       Running   0          2m42s
     ```
 
 7. Once the cluster is no longer needed it may be destroyed with the following command:
     ```shell
-    $ hack/vagrant.sh destroy -f
+    $ hack/vagrant.sh -- destroy -f
     ```
 
 ## Deploying local Kubernetes builds
@@ -106,7 +92,7 @@ Kubernetes to install. However, the flag may *also* be used to deploy a
 **local** build of Kubernetes!
 
 ```shell
-$ hack/vagrant.sh -p fusion -b ubuntu -3 -k "${GOPATH}/src/k8s.io/kubernetes" up
+$ hack/vagrant.sh -b ubuntu -3 -k "${GOPATH}/src/k8s.io/kubernetes" -- up
 ```
 
 The above command creates a three-node Kubernetes cluster using Ubuntu
@@ -119,7 +105,7 @@ source tree in the `GOPATH`. For example, the previous command could be
 rewritten like so:
 
 ```shell
-$ hack/vagrant.sh -p fusion -b ubuntu -3 -k local up
+$ hack/vagrant.sh -b ubuntu -3 -k local -- up
 ```
 
 ### Bring your own builds
@@ -187,6 +173,9 @@ Each of the above commands accept the same set of command line arguments:
   -p PROVIDER   Valid providers are: "virtualbox" and "vmware".
                 The default value is "virtualbox".
 
+  -v            Enables the vSphere cloud provider and directs it to
+                use the vCenter simulator.
+
   -1            Provision a single-node cluster
                   c01  Controller+Worker
 
@@ -205,8 +194,9 @@ Whenever any of these commands are invoked, the command line arguments are used
 to build a YAML configuration file that describes the cluster. For example:
 ```yaml
 ---
+box:         vmware/photon
+provider:    virtualbox
 k8s:         release/stable
-box:         bento/ubuntu-16.04
 cpu:         1
 mem:         1024
 nodes:       3
@@ -217,9 +207,9 @@ both:        1
 A SHA-1 hash is derived from the configuration file so the commands then know
 in which directory to look for the files related to the deployed cluster. For
 instance, the above configuration file produces the SHA-1 hash, 
-`dafad8af9c2e7fa5dbfbe23a91100f31ba15208a`. The first seven characters from this
+`b007db9f0fb38732d6f4bdaafab06d0823b13698`. The first seven characters from this
 string are use to generate the data directory for the cluster, 
-`${HOME}/.yakity/vagrant/dafad8a`.
+`${HOME}/.yakity/vagrant/b007db9`.
 
 ### The `instance` symlink
 Another result of invoking the above commands is the creation of an `instance`
@@ -227,25 +217,26 @@ symlink that points to the data directory derived from the aforementioned
 configuration file checksum. For example, imagine the following command is used
 to deploy a single-node Kubernetes cluster onto Photon OS:
 ```shell
-$ hack/vagrant.sh -b photon -1
+$ hack/vagrant.sh -b photon
 ```
 
 Aside from standing up a new Kubernetes cluster, the above command will also
 create the following:
 
-* `$HOME/.yakity/vagrant/931b9bb`
-* `$HOME/.yakity/vagrant/instance`
+* `${HOME}/.yakity/vagrant/64fecd2`
+* `${HOME}/.yakity/vagrant/instance`
 
 The first path is the data directory for the new cluster. The second path is
 a symlink that references the first path. The benefit this provides is the
 ability to invoke subsequent commands without the need to provide the command
 line flags needed to derive the configuration checksum:
 ```shell
-$ hack/kubectl.sh get nodes
+$ hack/kubectl.sh -- get nodes
 NAME         STATUS    ROLES     AGE       VERSION
 c01.yakity   Ready     <none>    25m       v1.12.2
 ```
 
 The `instance` symlink is updated everytime one of the helper commands is
-invoked with one or more of the flags `-b`, `-c`, `-m`, `-1`, `-2`, or `-3`.
+invoked with one or more of the flags `-b`, `-c`, `-m`, `-p`, `-1`, `-2`,
+or `-3`.
 

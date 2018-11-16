@@ -25,16 +25,20 @@ export PROGRAM="vagrant"
 # shellcheck disable=SC1090
 . "$(dirname "${0}")/common.sh"
 
-print_context
-
 case "${1}" in
 up)
+  print_context
   # shellcheck disable=SC1004
-  exec /bin/sh -c 'vagrant up \
-    --provision-with init-guest,file,init-yakity && \
+  exec /bin/sh -c 'vagrant up --provision-with init-guest && \
+    vagrant provision --provision-with file,init-yakity && \
     vagrant provision --provision-with start-yakity'
   ;;
+vup)
+  print_context
+  exec vagrant up "${@}"
+  ;;
 down)
+  print_context
   exec vagrant destroy -f
   ;;
 *)

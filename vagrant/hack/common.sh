@@ -46,6 +46,9 @@ FLAGS
   -p PROVIDER   Valid providers are: "virtualbox" and "vmware".
                 The default value is "virtualbox".
 
+  -v            Enables the vSphere cloud provider and directs it to
+                use the vCenter simulator.
+
   -1            Provision a single-node cluster
                   c01  Controller+Worker
 
@@ -115,9 +118,15 @@ export usage
 
 [ "${#}" -gt "0" ] || { usage && exit 1; }
 
+_hack_dir="$(dirname "${0}")"
+if [ -f "${_hack_dir}/../Vagrantfile" ]; then
+  VAGRANT_CWD="$(dirname "${_hack_dir}")"
+  export VAGRANT_CWD
+fi
+
 fatal() { echo "${@}" 1>&2 && exit 1; }; export fatal
 
-while getopts ":k:b:c:m:p:h123" opt; do
+while getopts ":k:b:c:m:p:vh123" opt; do
   case "${opt}" in
   k)
     flags=true
@@ -136,7 +145,11 @@ while getopts ":k:b:c:m:p:h123" opt; do
     mem="${OPTARG}"
     ;;
   p)
+    flags=true
     provider="${OPTARG}"
+    ;;
+  v)
+    export VCSIM=1
     ;;
   1|2|3)
     flags=true
@@ -163,13 +176,12 @@ is_int() { echo "${1}" | tr -d ',' | grep '^[[:digit:]]\{1,\}$'; }
 
 validate_box() { 
   igrep "${1}" '^\(centos\|photon\|ubuntu\)$' | lcase || \
-  fatal "invalid box: ${box}"
+  fatal "invalid box: ${1}"
 }
 
 validate_provider() {
-  igrep "${1}" '^\(fusion\|'\
-'\(vmware\(_\(desktop\|fusion\)\)\{0,1\}\)\|'\
-'virtualbox\)$' | lcase
+  igrep "${1}" '^\(fusion\|\(vmware\(_\(desktop\|fusion\)\)\{0,1\}\)\|virtualbox\)$' | lcase || \
+  fatal "invalid provider: ${1}"
 }
 
 vagrant_home="${HOME}/.yakity/vagrant"
@@ -204,6 +216,13 @@ if [ "${flags}" = "true" ] || [ ! -e "${config}" ]; then
     ;;
   esac
 
+  provider="$(validate_provider "${provider:-virtualbox}")"
+  case "${provider}" in
+  fusion|vmware|vmware_desktop|vmware_fusion)
+    provider="vmware_fusion"
+    ;;
+  esac
+
   cpu="$(is_int "${cpu:-1}")" || fatal "invalid cpu value: ${cpu}"
   mem="$(is_int "${mem:-1024}")" || fatal "invalid mem value: ${mem}"
 
@@ -226,8 +245,9 @@ if [ "${flags}" = "true" ] || [ ! -e "${config}" ]; then
   config="$(mktemp)"
   cat <<EOF >"${config}"
 ---
-k8s:         ${k8s}
 box:         ${box}
+provider:    ${provider}
+k8s:         ${k8s}
 cpu:         ${cpu}
 mem:         ${mem}
 nodes:       ${num_nodes}
@@ -236,42 +256,31 @@ both:        ${num_both}
 EOF
 fi
 
-get_sha() {
-  { shasum -t -a1 2>/dev/null || sha1sum -t; } <"${1}" | 
-    awk '{print $1}' | cut -c-7
+# If the -i flag was specified then remove the existing instance.
+sha7() {
+  { shasum -t -a1 2>/dev/null || sha1sum -t; } | awk '{print $1}' | cut -c-7
 }
 
-config_sha=$(get_sha "${config}")
-VAGRANT_DOTFILE_PATH="${vagrant_home}/${config_sha}"
-export VAGRANT_DOTFILE_PATH
-mkdir -p "${VAGRANT_DOTFILE_PATH}"
-rm -f "${instance}" && ln -s "${VAGRANT_DOTFILE_PATH}" "${instance}"
+# Configure a custom location for the Vagrant's data directory, .vagrant.
+VAGRANT_DOTFILE_PATH="${vagrant_home}/$(sha7 <"${config}")"
+export VAGRANT_DOTFILE_PATH && mkdir -p "${VAGRANT_DOTFILE_PATH}"
 
+# Make sure Vagrant sees the path to the config file.
 export CONFIG="${VAGRANT_DOTFILE_PATH}/config.yaml"
-if [ -f "${CONFIG}" ]; then
-  [ "${config_sha}" = "$(get_sha "${CONFIG}")" ] || rm -f "${config}"
-else
-  mv "${config}" "${CONFIG}"
-fi
 
-provider_file="${VAGRANT_DOTFILE_PATH}/provider"
-if [ -z "${provider}" ] && [ -f "${provider_file}" ]; then
-  provider="$(cat "${provider_file}")"
-fi
-provider="$(validate_provider "${provider:-virtualbox}")" || \
-  fatal "provider must be set with -p or in ${provider_file}"
-case "${provider}" in
-fusion|vmware|vmware_desktop|vmware_fusion)
-  provider="vmware_fusion"
-  ;;
-esac
-export VAGRANT_DEFAULT_PROVIDER="${provider}" 
-echo "${VAGRANT_DEFAULT_PROVIDER}" >"${provider_file}"
+# If the config file does not already exist, move the file into its
+# permanent location.
+mv -f "${config}" "${CONFIG}" 2>/dev/null || true
 
-c01_path="${VAGRANT_DOTFILE_PATH}/machines/c01"
-provider_path="${c01_path}/${VAGRANT_DEFAULT_PROVIDER}"
-export KUBECONFIG="${provider_path}/kubeconfig"
-export DNSCONFIG="${provider_path}/dnsconfig"
+# Create the symlink to the instance.
+rm -f "${instance}"; ln -s "${VAGRANT_DOTFILE_PATH}" "${instance}"
+
+# Determine the preferred provider.
+provider="$(grep '^provider:' "${CONFIG}" | awk '{print $2}')"
+
+export VAGRANT_DEFAULT_PROVIDER="${provider}"
+export KUBECONFIG="${VAGRANT_DOTFILE_PATH}/kubeconfig"
+export DNSCONFIG="${VAGRANT_DOTFILE_PATH}/dnsconfig"
 
 print_context() {
   echo "data: ${VAGRANT_DOTFILE_PATH}"

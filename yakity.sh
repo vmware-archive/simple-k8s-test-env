@@ -333,9 +333,19 @@ if [ "${HOST_FQDN}" = "${HOST_NAME}" ]; then
 fi
 
 if [ -z "${IPV4_ADDRESS}" ]; then
+  if [ -n "${IPV4_DEVICE}" ]; then
+    ip_route_dev="dev ${IPV4_DEVICE}"
+  fi
   # shellcheck disable=SC2086
-  IPV4_ADDRESS=$(ip route get ${IP_ROUTE_DEV} 1 | awk '{print $NF;exit}') || \
+  IPV4_ADDRESS=$(ip route get ${ip_route_dev} 1 | awk '{print $NF;exit}') || \
     fatal "failed to get ipv4 address"
+fi
+
+if [ -z "${MAC_ADDRESS}" ]; then
+  # shellcheck disable=SC2086
+  MAC_ADDRESS=$(ip a | \
+    grep -F "${IPV4_ADDRESS}" -B 1 | head -n 1 | awk '{print $2}') || \
+    fatal "failed to get mac address"
 fi
 
 ################################################################################
@@ -517,6 +527,15 @@ CLOUD_PROVIDER_IMAGE=${CLOUD_PROVIDER_IMAGE:-gcr.io/cloud-provider-vsphere/vsphe
 # imagePullSecrets section. This value is a space-delimited
 # series of secret references added to that section.
 #CLOUD_PROVIDER_IMAGE_SECRETS=
+
+# Set to a truthy value to enable the vCenter simulator. The simulator
+# is only used if CLOUD_PROVIDER or CLOUD_PROVIDER_EXTERNAL is set to
+# "vsphere".
+VCSIM="${VCSIM:-false}"
+VCSIM=$(parse_bool "${VCSIM}")
+
+# The port on which the vCenter simulator listens for incoming connections.
+VCSIM_PORT="${VCSIM_PORT:-8989}"
 
 # Versions of the software packages installed on the controller and
 # worker nodes. Please note that not all the software packages listed
@@ -774,6 +793,18 @@ retry_until_0() {
   { is_debug && debug "${msg}: success"; } || echo "✓"
 }
 
+get_product_uuid() {
+  tr '[:upper:]' '[:lower:]' </sys/class/dmi/id/product_uuid || \
+    { error "failed to read product uuid"; return; }
+}
+
+get_product_serial() {
+  tr '[:upper:]' '[:lower:]' </sys/class/dmi/id/product_serial | \
+    cut -c8- | tr -d ' -' | \
+    sed 's/^\([[:alnum:]]\{1,8\}\)\([[:alnum:]]\{1,4\}\)\([[:alnum:]]\{1,4\}\)\([[:alnum:]]\{1,4\}\)\([[:alnum:]]\{1,12\}\)$/\1-\2-\3-\4-\5/' || \
+    { error "failed to read product serial"; return; }
+}
+
 # Parses K8S_VERSION and returns the URL used to access the Kubernetes
 # artifacts for the provided version string.
 get_k8s_artifacts_url() {
@@ -854,6 +885,28 @@ http_ok() { http_200 "${1}" || http_301 "${1}" || http_302 "${1}"; }
 # or https://.
 is_url() {
   echo "${1}" | grep -iq '^https\{0,1\}://'
+}
+
+is_cloud_provider_internal_vsphere() {
+  [ "${CLOUD_PROVIDER}" = "vsphere" ]
+}
+
+is_cloud_provider_external() {
+  [ "${CLOUD_PROVIDER}" = "external" ]
+}
+
+is_cloud_provider_external_vsphere() {
+  is_cloud_provider_external && [ "${CLOUD_PROVIDER_EXTERNAL}" = "vsphere" ]
+}
+
+is_cloud_provider_vsphere() {
+  is_cloud_provider_internal_vsphere || is_cloud_provider_external_vsphere
+}
+
+# Returns a successful exit code if the vCenter simulator is enabled
+# and the in-tree or external cloud provider is set to vSphere.
+is_vcsim() {
+  [ "${VCSIM}" = "true" ] && is_cloud_provider_vsphere
 }
 
 # Creates a new X509 certificate/key pair.
@@ -1607,10 +1660,10 @@ create_dns_entries() {
   etcdctl get "/skydns/${fqdn_rev}"
 
   # Create the TXT record for this host that returns the node type.
-  etcdctl put "/skydns/${fqdn_rev}/txt/node-type" \
-    '{"text":"'"${NODE_TYPE}"'"}' || \
-    { error "failed to create DNS TXT-record for node type"; return; }
-  etcdctl get "/skydns/${fqdn_rev}/txt/node-type"
+  #etcdctl put "/skydns/${fqdn_rev}/txt/node-type" \
+  #  '{"text":"'"${NODE_TYPE}"'"}' || \
+  #  { error "failed to create DNS TXT-record for node type"; return; }
+  #etcdctl get "/skydns/${fqdn_rev}/txt/node-type"
 
   # Create the reverse lookup record for this host.
   debug "creating DNS reverse lookup record for this host"
@@ -1630,15 +1683,15 @@ create_dns_entries() {
 
   # Create a text record at the root of the cluster that contains the
   # host name of all of the members of the cluster.
-  _rev_domain_fqdn="$(reverse_fqdn "${NETWORK_DOMAIN}")"
-  etcdctl put "/skydns/${_rev_domain_fqdn}/txt/cluster/num-nodes" \
-    '{"text":"'"${NUM_NODES}"'"}' || \
-    { error "failed to create DNS TXT-record for NUM_NODES"; return; }
-  etcdctl get "/skydns/${_rev_domain_fqdn}/txt/cluster/num-nodes"
-  etcdctl put "/skydns/${_rev_domain_fqdn}/txt/cluster/num-controllers" \
-    '{"text":"'"${NUM_CONTROLLERS}"'"}' || \
-    { error "failed to create DNS TXT-record for NUM_CONTROLLERS"; return; }
-  etcdctl get "/skydns/${_rev_domain_fqdn}/txt/cluster/num-controllers"
+  #_rev_domain_fqdn="$(reverse_fqdn "${NETWORK_DOMAIN}")"
+  #etcdctl put "/skydns/${_rev_domain_fqdn}/txt/cluster/num-nodes" \
+  #  '{"text":"'"${NUM_NODES}"'"}' || \
+  #  { error "failed to create DNS TXT-record for NUM_NODES"; return; }
+  #etcdctl get "/skydns/${_rev_domain_fqdn}/txt/cluster/num-nodes"
+  #etcdctl put "/skydns/${_rev_domain_fqdn}/txt/cluster/num-controllers" \
+  #  '{"text":"'"${NUM_CONTROLLERS}"'"}' || \
+  #  { error "failed to create DNS TXT-record for NUM_CONTROLLERS"; return; }
+  #etcdctl get "/skydns/${_rev_domain_fqdn}/txt/cluster/num-controllers"
 
   debug "created DNS entries"
 }
@@ -1963,15 +2016,21 @@ put_node_info() {
   node_info_key="/yakity/nodes/${NODE_INDEX}"
   debug "node info key=${node_info_key}"
   
+  _uuid=$(get_product_uuid) || return "${?}"
+  _serial=$(get_product_serial) || return "${?}"
+
   cat <<EOF | put_stdin "${node_info_key}" || \
     { error "failed to put node info"; return; }
 {
   "host_fqdn": "${HOST_FQDN}",
   "host_name": "${HOST_NAME}",
   "ipv4_address": "${IPV4_ADDRESS}",
+  "mac_address": "${MAC_ADDRESS}",
   "node_type": "${NODE_TYPE}",
   "node_index": ${NODE_INDEX},
-  "pod_cidr": "${POD_CIDR}"
+  "pod_cidr": "${POD_CIDR}",
+  "uuid": "${_uuid}",
+  "serial": "${_serial}"
 }
 EOF
 
@@ -1982,8 +2041,13 @@ get_all_node_info() {
   etcdctl get /yakity/nodes --sort-by=KEY --prefix
 }
 
+#get_all_node_ipv4_addresses() {
+#  get_all_node_info | grep ipv4_address | awk '{print $2}' | tr -d '",'
+#}
+
 get_all_node_ipv4_addresses() {
-  get_all_node_info | grep ipv4_address | awk '{print $2}' | tr -d '",'
+  etcdctl get /yakity/nodes --sort-by=KEY --prefix \
+    --print-value-only | jq -rs '.[] | .ipv4_address'
 }
 
 # Polls etcd until all nodes have uploaded their information.
@@ -4000,6 +4064,226 @@ create_pod_net_routes() {
   debug "created routes to pod nets on other nodes"
 }
 
+install_vcsim_service() {
+  # Stores the name of the node on which vcsim is running.
+  init_vcsim_key="/yakity/init-vcsim"
+
+  # Check to see if the init routine has already run on another node.
+  name_of_init_node=$(etcdctl get --print-value-only "${init_vcsim_key}") || \
+    { error "failed to get name of init node for vcsim"; return; }
+
+  if [ -n "${name_of_init_node}" ]; then
+    info "vcsim has already been configured from node ${name_of_init_node}"
+    VCSIM_FQDN="${name_of_init_node}"
+    export GOVC_URL="https://${VCSIM_FQDN}:${VCSIM_PORT}/sdk"
+    rm -f "${BIN_DIR}/vcsim"
+    return
+  fi
+
+  VCSIM_FQDN="${HOST_FQDN}"
+  export GOVC_URL="https://${VCSIM_FQDN}:${VCSIM_PORT}/sdk"
+
+  # Let other nodes know that this node us running vcsim.
+  put_string "${init_vcsim_key}" "${HOST_FQDN}" || \
+    { error "error configuring vcsim"; return; }
+
+  # Create the vcsim user if it doesn't exist.
+  if ! getent passwd vcsim >/dev/null 2>&1; then
+    debug "creating vcsim user"
+    useradd vcsim --home /var/lib/vcsim --no-user-group --system -M || \
+      { error "failed to create vcsim user"; return; }
+  fi
+
+  # Create the vcsim directories and set their owner to vcsim.
+  debug "creating directories for vcsim server"
+  mkdir -p /var/lib/vcsim
+  chown vcsim /var/lib/vcsim || return
+
+  cat <<EOF >/etc/default/vcsim
+VCSIM_OPTS="-vm 0 \\
+-httptest.serve 0.0.0.0:${VCSIM_PORT}"
+
+VM_FILE="/var/lib/vcsim/vms"
+EOF
+
+  # Create the vcsim systemd service.
+  debug "writing vcsim service file=/etc/systemd/system/vcsim.service"
+  cat <<EOF > /etc/systemd/system/vcsim.service
+[Unit]
+Description=vcsim.service
+Documentation=https://github.com/vmware/govmomi/tree/master/vcsim
+After=network-online.target
+Wants=network-online.target
+
+[Install]
+WantedBy=multi-user.target
+
+[Service]
+Restart=always
+RestartSec=10s
+LimitNOFILE=40000
+TimeoutStartSec=0
+NoNewPrivileges=true
+PermissionsStartOnly=true
+User=vcsim
+WorkingDirectory=/var/lib/vcsim
+EnvironmentFile=/etc/default/govc
+EnvironmentFile=/etc/default/vcsim
+ExecStart=/opt/bin/vcsim \$VCSIM_OPTS
+ExecStartPost=/var/lib/vcsim/create-vms.sh
+EOF
+
+  debug "enabling vcsim service"
+  systemctl -l enable vcsim.service || \
+    { error "failed to enable vcsim.service"; return; }
+
+  debug "created vcsim service"
+}
+
+start_vcsim_service() {
+  debug "starting vcsim service"
+  systemctl -l start vcsim.service || \
+    { error "failed to start vcsim.service"; return; }
+}
+
+create_govc_config() {
+  # Write the govc configuration.
+  cat <<EOF >/etc/default/govc
+GOVC_URL="${GOVC_URL}"
+GOVC_INSECURE="true"
+GOVC_USERNAME="user"
+GOVC_PASSWORD="pass"
+GOVC_DATACENTER="/DC0"
+GOVC_RESOURCE_POOL="/DC0/host/DC0_C0/Resources"
+GOVC_DATASTORE="/DC0/datastore/LocalDS_0"
+GOVC_FOLDER="/DC0/vm"
+GOVC_NETWORK="/DC0/network/VM Network"
+EOF
+  cat <<EOF > /etc/profile.d/govc.sh
+#!/bin/sh
+set -o allexport && . /etc/default/govc && set +o allexport
+EOF
+  # shellcheck disable=SC1091
+  set -o allexport && . /etc/default/govc && set +o allexport
+}
+
+config_vcsim_as_ccm() {
+  if [ "${CLOUD_PROVIDER}" = "vsphere" ]; then
+    CLOUD_CONFIG=$(cat <<EOF | gzip -9c | base64 -w0
+[Global]
+  user               = "user""
+  password           = "pass"
+  port               = "${VCSIM_PORT}"
+  insecure-flag      = "true"
+  datacenters        = "DC0"
+
+[VirtualCenter "${VCSIM_FQDN}"]
+
+[Workspace]
+  server             = "${VCSIM_FQDN}"
+  datacenter         = "DC0"
+  folder             = "vm"
+  default-datastore  = "LocalDS_0"
+  resourcepool-path  = "Resources"
+
+[Disk]
+  scsicontrollertype = pvscsi
+
+[Network]
+  public-network     = "VM Network"
+EOF
+)
+  else
+    CLOUD_CONFIG=$(cat <<EOF | gzip -9c | base64 -w0
+[Global]
+  secret-name        = "cloud-provider-vsphere-credentials"
+  secret-namespace   = "kube-system"
+  service-account    = "cloud-controller-manager"
+  port               = "${VCSIM_PORT}"
+  insecure-flag      = "true"
+  datacenters        = "DC0"
+
+[VirtualCenter "${VCSIM_FQDN}"]
+EOF
+)
+
+    MANIFEST_YAML_AFTER_RBAC_2=$(cat <<EOF | gzip -9c | base64 -w0
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloud-provider-vsphere-credentials
+  namespace: kube-system
+data:
+  ${VCSIM_FQDN}.username: "$(printf '%s' "user" | base64 -w0)"
+  ${VCSIM_FQDN}.password: "$(printf '%s' "pass" | base64 -w0)"
+EOF
+)
+    export MANIFEST_YAML_AFTER_RBAC_2
+  fi
+
+  export CLOUD_CONFIG
+}
+
+config_vcsim_service() {
+  info "configuring vcsim service"
+
+  # Use jq to get all of the information about the nodes needed to create the
+  # VMs in vcsim.
+  etcdctl get /yakity/nodes --sort-by=KEY --prefix --print-value-only | \
+    jq -rs '.[] | "\(.host_name),\(.host_fqdn),\(.ipv4_address),\(.mac_address),\(.uuid),\(.serial)"' \
+    >/var/lib/vcsim/vms
+
+  cat <<EOF >/var/lib/vcsim/create-vms.sh
+#!/bin/sh
+
+set -x
+
+[ -f "\${VM_FILE}" ] || exit 1
+
+while IFS='' read -r vm || [ -n "\${vm}" ]; do
+  host_name=\$(echo "\${vm}" | awk -F, '{print \$1}')
+  host_fqdn=\$(echo "\${vm}" | awk -F, '{print \$2}')
+  ipv4_address=\$(echo "\${vm}" | awk -F, '{print \$3}')
+  mac_address=\$(echo "\${vm}" | awk -F, '{print \$4}')
+  serial=\$(echo "\${vm}" | awk -F, '{print \$5}')
+  uuid=\$(echo "\${vm}" | awk -F, '{print \$6}')
+
+  echo "creating vcsim vm Name=\${host_name} FQDN=\${host_fqdn} IPv4=\${ipv4_address} MAC=\${mac_address} ID=\${uuid} Serial=\${serial}"
+  ${BIN_DIR}/govc vm.create -net.address "\${mac_address}" "\${host_name}"
+  ${BIN_DIR}/govc vm.change -vm "${GOVC_FOLDER}/\${host_name}" \\
+    -e "SET.config.uuid=\${serial}" \\
+    -e "SET.summary.config.uuid=\${serial}" \\
+    -e "SET.config.instanceUuid=\${uuid}" \\
+    -e "SET.summary.config.instanceUuid=\${uuid}" \\
+    -e "SET.guest.hostName=\${host_fqdn}" \\
+    -e "SET.summary.guest.hostName=\${host_fqdn}" \\
+    -e "SET.guest.ipAddress=\${ipv4_address}" \\
+    -e "SET.summary.guest.ipAddress=\${ipv4_address}"
+done <"\${VM_FILE}"
+EOF
+  chmod 0755 /var/lib/vcsim/create-vms.sh
+}
+
+configure_vcsim() {
+  info "configuring vcsim"
+
+  do_with_lock install_vcsim_service \
+                         || { error "failed to install vcsim service"; error; }
+
+  # At this point VCSIM_FQDN will equal HOST_FQDN if this is the host
+  # running the vCenter simulator.
+
+  config_vcsim_as_ccm    || { error "failed to config vcsim as ccm"; error; }
+  create_govc_config     || { error "failed to create govc config"; error; }
+
+  if [ "${VCSIM_FQDN}" = "${HOST_FQDN}" ]; then
+    config_vcsim_service || { error "failed to config vcsim service"; error; }
+    start_vcsim_service  || { error "failed to start vcsim service"; error; }
+  fi
+
+  debug "configured vcsim"
+}
+
 ################################################################################
 ##                           Download Binaries                                ##
 ################################################################################
@@ -4437,11 +4721,36 @@ download_runsc() {
   debug "downloaded ${url}"
 }
 
+download_vcsim() {
+  if [ -f "/opt/bin/vcsim" ]; then
+    info "already downloaded vcsim"; return
+  fi
+  url=https://s3-us-west-2.amazonaws.com/cnx.vmware/cicd/vcsim_linux_amd64
+  ${CURL} -Lo "${BIN_DIR}/vcsim" "${url}" || error "failed to download ${url}"
+  debug "downloaded ${url}"
+}
+
+download_govc() {
+  if [ -f "/opt/bin/govc" ]; then
+    info "already downloaded vcsim"; return
+  fi
+  url=https://s3-us-west-2.amazonaws.com/cnx.vmware/cicd/govc_linux_amd64
+  ${CURL} -Lo "${BIN_DIR}/govc" "${url}" || error "failed to download ${url}"
+  debug "downloaded ${url}"
+}
+
 download_binaries() {
   # Download binaries found on both control-plane and worker nodes.
   download_jq                || { error "failed to download jq"; return; }
   download_etcd              || { error "failed to download etcd"; return; }
   download_kubernetes_client || { error "failed to download kubernetes client"; return; }
+
+  # Check to see if the vCenter simulator is enabled and the cloud provider
+  # is set to vSphere.
+  if is_vcsim; then
+    download_govc  || { error "failed to download govc"; return; }
+    download_vcsim || { error "failed to download vcsim"; return; }
+  fi
 
   # Download binaries found only on control-plane nodes.
   if [ ! "${NODE_TYPE}" = "worker" ]; then
@@ -4620,6 +4929,11 @@ resolve_via_coredns || fatal "failed to resolve via CoreDNS"
 
 # Waits until all the nodes can be resolved by their IP addresses.
 wait_on_reverse_lookup || fatal "failed to wait on reverse lookup"
+
+# Configures the vCenter simulator if it is enabled.
+if is_vcsim; then
+  configure_vcsim || fatal "failed to configure vcsim"
+fi
 
 # Enable the bridge module for nodes where pod workloads are scheduled.
 if [ ! "${NODE_TYPE}" = "controller" ]; then

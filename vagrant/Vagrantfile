@@ -13,6 +13,36 @@
 # terms and conditions of the subcomponent's license, as noted in the LICENSE
 # file.
 
+require 'pp'
+require 'SecureRandom'
+
+def copy_file_to_dir(node, src, dst="/var/lib/yakity")
+  node.vm.provision "file",
+    source:       src,
+    destination:  "#{File.join(dst, File.basename(src))}"
+end
+
+def to_serial(u)
+  u=u.gsub(/-/,'')
+  u_1=u.gsub(/^(\w{16})(\w{16})$/, '\1')
+  u_2=u.gsub(/^(\w{16})(\w{16})$/, '\2')
+  serial_1=u_1.gsub(/(\w{2})(\w{2})(\w{2})(\w{2})(\w{2})(\w{2})(\w{2})(\w{2})/, '\1 \2 \3 \4 \5 \6 \7 \8')
+  serial_2=u_2.gsub(/(\w{2})(\w{2})(\w{2})(\w{2})(\w{2})(\w{2})(\w{2})(\w{2})/, '\1 \2 \3 \4 \5 \6 \7 \8')
+  return "#{serial_1}-#{serial_2}"
+end
+
+def to_uuid(s)
+  return s.gsub(/[\s\-]/, '').gsub(
+    /(\w{8})(\w{4})(\w{4})(\w{4})(\w{12})/, '\1-\2-\3-\4-\5')
+end
+
+def convert_k8s_uuid(u)
+  u1="#{u[6,2]}#{u[4,2]}#{u[2,2]}#{u[0,2]}"
+  u2="#{u[11,2]}#{u[9,2]}-#{u[16,2]}#{u[14,2]}"
+  u3="#{u[19,4]}-#{u[24,12]}"
+  return "#{u1}-#{u2}-#{u3}"
+end
+
 # Define some default values.
 CONFIG=ENV['CONFIG'] || 'config.yaml'
 YAKITY_SH='../yakity.sh'
@@ -26,12 +56,11 @@ TLS_CA_CRT="#{VAGRANT_DOTFILE_PATH}/ca.crt"
 TLS_CA_KEY="#{VAGRANT_DOTFILE_PATH}/ca.key"
 K8S_ADMIN_CRT="#{VAGRANT_DOTFILE_PATH}/k8s-admin.crt"
 K8S_ADMIN_KEY="#{VAGRANT_DOTFILE_PATH}/k8s-admin.key"
-KUBECONFIG="#{VAGRANT_DOTFILE_PATH}/machines/c01/#{VAGRANT_PROVIDER}/kubeconfig"
-DNSCONFIG="#{VAGRANT_DOTFILE_PATH}/machines/c01/#{VAGRANT_PROVIDER}/dnsconfig"
+KUBECONFIG="#{VAGRANT_DOTFILE_PATH}/kubeconfig"
+DNSCONFIG="#{VAGRANT_DOTFILE_PATH}/dnsconfig"
 K8S_RELEASE_LCL=File.join(
   ENV['GOPATH'] || "#{ENV['HOME']}/go", 'src/k8s.io/kubernetes')
 K8S_RELEASE_REM='/var/lib/kubernetes/install/local'
-
 
 # Load the config file if it exists.
 require 'yaml'
@@ -63,6 +92,15 @@ if ($k8s == 'local')
   end
 end
 
+# Generate/get the UUID seed.
+$uuid_file=File.join(ENV['VAGRANT_DOTFILE_PATH'] || '.vagrant', 'uuid')
+if File.file?($uuid_file)
+  $uuid=File.read($uuid_file)
+else
+  $uuid=SecureRandom.uuid.downcase
+  File.write($uuid_file, $uuid)
+end
+
 # Create the node definitions.
 $nodes = []
 for i in 1..$num_nodes do
@@ -73,10 +111,20 @@ for i in 1..$num_nodes do
     node_type = "worker"
     host_name = sprintf("w%02d", i-$num_controllers)
   end
+  uuid_suffix = i.to_s(16)
+  uuid = "#{$uuid[0..-(uuid_suffix.length+1)]}#{uuid_suffix}"
   $nodes << {
-    :host => host_name,
-    :type => node_type
+    :host       => host_name,
+    :type       => node_type,
+    :uuid       => uuid,
+    :serial     => to_serial(uuid),
+    :k8s_uuid   => convert_k8s_uuid(uuid),
+    :k8s_serial => to_serial(convert_k8s_uuid(uuid)),
   }
+end
+$nodes_file=File.join(ENV['VAGRANT_DOTFILE_PATH'] || '.vagrant', 'nodes')
+File.open($nodes_file,"w") do |f|
+  PP.pp($nodes, f)
 end
 
 # The Photon box ships with a static machine-id, which means
@@ -104,8 +152,8 @@ tdnf install -y gawk \
 EOF
 
 $init_guest_script = <<-EOF
-mkdir -p /var/lib/yakity
-chown vagrant /var/lib/yakity
+mkdir -p /var/lib/yakity /opt/bin
+chown vagrant /var/lib/yakity /opt/bin
 EOF
 
 # Ubuntu doesn't automatically source /etc/profile, so let's do that.
@@ -114,7 +162,7 @@ echo '. /etc/profile' >>/home/vagrant/.bashrc
 EOF
 
 # If there is more than one node an etcd discovery URL needs to be generated.
-$etcd_disco = $num_nodes <= 1 ? 
+$etcd_disco = $num_nodes <= 1 ?
   "" : `curl -sSL https://discovery.etcd.io/new?size=#{$num_controllers}`
 
 # Generate a self-signed CA to use with the box(es).
@@ -135,15 +183,8 @@ if (not File.file?(K8S_ADMIN_CRT) or not File.file?(K8S_ADMIN_KEY))
   #{NEW_CERT_SH} >/dev/null 2>&1`
 end
 
-def copy_file_to_dir(node, src, dst="/var/lib/yakity")
-  node.vm.provision "file", 
-    source:       src, 
-    destination:  "#{File.join(dst, File.basename(src))}"
-end
-
 Vagrant.configure("2") do |config|
   config.vm.box = $box
-  config.vm.network "private_network", type: "dhcp"
 
   # Disable the default synced folder.
   config.vm.synced_folder ".", "/vagrant", disabled: true
@@ -198,7 +239,7 @@ Vagrant.configure("2") do |config|
     trigger.only_on = /(?i)c01/
     trigger.run     = {
       :inline => <<-SHELL
-        /bin/sh -c 'echo "$(vagrant port --guest 53 c01)" > "#{DNSCONFIG}"'
+        /bin/sh -c 'echo "$(vagrant port --guest 53 c01)" >"#{DNSCONFIG}"'
       SHELL
     }
   end
@@ -224,6 +265,31 @@ Vagrant.configure("2") do |config|
   # Create the node(s)
   $nodes.each do |node_config|
     config.vm.define node_config[:host] do |node|
+
+      node.vm.network "private_network",
+        type: "dhcp",
+        mac:  "005056#{SecureRandom.hex[0..5]}"
+
+      node.vm.provider VAGRANT_PROVIDER do |p|
+        node_uuid=node_config[:uuid]
+        case VAGRANT_PROVIDER
+        # https://www.virtualbox.org/manual/ch09.html
+        when 'virtualbox'
+          p.customize [
+            "setextradata",
+            :id,
+            "VBoxInternal/Devices/pcbios/0/Config/DmiSystemUuid",
+            "string:#{node_config[:k8s_uuid]}"]
+          p.customize [
+            "setextradata",
+            :id,
+            "VBoxInternal/Devices/pcbios/0/Config/DmiSystemSerial",
+            "string:VMware-#{node_config[:serial]}"]
+        when 'vmware_fusion'
+          p.vmx['uuid.bios'] = node_config[:k8s_serial]
+          p.vmx['serialnumber'] = "VMware-#{node_config[:serial]}"
+        end
+      end
 
       # Assign the fully-qualified host name.
       node.vm.hostname = "#{node_config[:host]}.yakity"
@@ -259,6 +325,12 @@ Vagrant.configure("2") do |config|
         end
       end
 
+      if (ENV['BIN_DIR'])
+        node.vm.provision "file",
+          source:       "#{ENV['BIN_DIR']}",
+          destination:  "/opt/bin"
+      end
+
       # Copy files to the VM.
       copy_file_to_dir node, YAKITY_SH
       copy_file_to_dir node, YAKITY_SERVICE
@@ -272,6 +344,7 @@ Vagrant.configure("2") do |config|
           chmod 0644 /etc/ssl/ca.crt
           chmod 0400 /etc/ssl/ca.key
           chmod 0755 /var/lib/yakity/yakity.sh
+          chmod -R 0755 /opt/bin
 
           nic=$(ip a | grep '^3:' | awk -F: '{print $2}' | tr -d '[:space:]')
           ip4=$(ip route get dev "${nic}" 1 | awk '{print $NF;exit}')
@@ -286,6 +359,9 @@ NODE_TYPE="#{node_config[:type]}"
 INSTALL_CONFORMANCE_TESTS="false"
 HOST_NAME_OVERRIDE="true"
 FAIL_SWAP_ON="false"
+VCSIM="#{ENV['VCSIM'] || 'true'}"
+CLOUD_PROVIDER="#{ENV['CLOUD_PROVIDER'] || 'external'}"
+CLOUD_PROVIDER_EXTERNAL="#{ENV['CLOUD_PROVIDER_EXTERNAL'] || 'vsphere'}"
 EOF
 
           systemctl -l enable /var/lib/yakity/yakity.service
