@@ -118,13 +118,10 @@ export usage
 
 [ "${#}" -gt "0" ] || { usage && exit 1; }
 
-_hack_dir="$(dirname "${0}")"
-if [ -f "${_hack_dir}/../Vagrantfile" ]; then
-  VAGRANT_CWD="$(dirname "${_hack_dir}")"
-  export VAGRANT_CWD
-fi
-
 fatal() { echo "${@}" 1>&2 && exit 1; }; export fatal
+
+# Change directories to the directory that's a parent of this script.
+cd "$(dirname "$(dirname "${0}")")" || fatal "unable to change directories"
 
 while getopts ":k:b:c:m:p:vh123" opt; do
   case "${opt}" in
