@@ -13,10 +13,63 @@
 # terms and conditions of the subcomponent's license, as noted in the LICENSE
 # file.
 
-require 'pp'
 require 'SecureRandom'
+require 'yaml'
 
-def copy_file_to_dir(node, src, dst="/var/lib/yakity")
+########################################################################
+##                             CONSTANTS                              ##
+########################################################################
+VAGRANT_DOTFILE_PATH=ENV['VAGRANT_DOTFILE_PATH'] || '.vagrant'
+VAGRANT_PROVIDER=ENV['VAGRANT_DEFAULT_PROVIDER'] || 'virtualbox'
+CONFIG=ENV['CONFIG'] || 'config.yaml'
+HOME=ENV['HOME'] || ENV['USERPROFILE'] || '/tmp/home'
+GOPATH=ENV['GOPATH'] || "#{HOME}/go"
+K8S_RELEASE_LCL="#{GOPATH}/src/k8s.io/kubernetes"
+K8S_RELEASE_REM='/var/lib/kubernetes/install/local'
+TLS_CA_CRT="#{VAGRANT_DOTFILE_PATH}/ca.crt"
+TLS_CA_KEY="#{VAGRANT_DOTFILE_PATH}/ca.key"
+VCSIM=ENV['VCSIM'] || 'true'
+CLOUD_PROVIDER=ENV['CLOUD_PROVIDER'] || 'external'
+CLOUD_PROVIDER_EXTERNAL=ENV['CLOUD_PROVIDER_EXTERNAL'] || 'vsphere'
+CLOUD_PROVIDER_IMAGE=ENV['CLOUD_PROVIDER_IMAGE'] || 'gcr.io/cloud-provider-vsphere/vsphere-cloud-controller-manager:latest'
+
+# The Photon box ships with a static machine-id, which means
+# in a multi-machine deployment, all the boxes will have the
+# same DHCP-provided IP address. This causes yakity to break
+# since etcd is advertising IP addresses that must be unique.
+#
+# This script disables the host-only NIC, recreates the
+# machine-id, and reenables the host-only NIC, thereby causing
+# the machine to request a new, unique IP address from the DHCP
+# server.
+INIT_PHOTON_SCRIPT = <<-EOF
+ifconfig eth1 down
+rm -f /etc/machine-id
+dbus-uuidgen --ensure=/etc/machine-id
+ifconfig eth1 up
+
+rm -f /etc/modules-load.d/virtualbox.conf
+tdnf install -y gawk \
+                unzip \
+                lsof \
+                bindutils \
+                iputils \
+                tar
+EOF
+
+# Ubuntu doesn't load the /etc/profile by default. This fixes that.
+INIT_UBUNTU_SCRIPT = <<-EOF
+echo '. /etc/profile' >>/home/vagrant/.bashrc
+EOF
+
+INIT_GUEST_SCRIPT = <<-EOF
+mkdir -p /var/lib/yakity /opt/bin
+EOF
+
+########################################################################
+##                             FUNCTIONS                              ##
+########################################################################
+def copy_file_to_dir(node, src, dst="/tmp")
   node.vm.provision "file",
     source:       src,
     destination:  "#{File.join(dst, File.basename(src))}"
@@ -43,145 +96,141 @@ def convert_k8s_uuid(u)
   return "#{u1}-#{u2}-#{u3}"
 end
 
-# Define some default values.
-CONFIG=ENV['CONFIG'] || 'config.yaml'
-YAKITY_SH='../yakity.sh'
-YAKITY_SERVICE='yakity.service'
-NEW_CA_SH='../hack/new-ca.sh'
-NEW_CERT_SH='../hack/new-cert.sh'
-NEW_KUBECONFIG_SH='../hack/new-kubeconfig.sh'
-VAGRANT_PROVIDER=ENV['VAGRANT_DEFAULT_PROVIDER'] || 'virtualbox'
-VAGRANT_DOTFILE_PATH=ENV['VAGRANT_DOTFILE_PATH'] || '.'
-TLS_CA_CRT="#{VAGRANT_DOTFILE_PATH}/ca.crt"
-TLS_CA_KEY="#{VAGRANT_DOTFILE_PATH}/ca.key"
-K8S_ADMIN_CRT="#{VAGRANT_DOTFILE_PATH}/k8s-admin.crt"
-K8S_ADMIN_KEY="#{VAGRANT_DOTFILE_PATH}/k8s-admin.key"
-KUBECONFIG="#{VAGRANT_DOTFILE_PATH}/kubeconfig"
-DNSCONFIG="#{VAGRANT_DOTFILE_PATH}/dnsconfig"
-K8S_RELEASE_LCL=File.join(
-  ENV['GOPATH'] || "#{ENV['HOME']}/go", 'src/k8s.io/kubernetes')
-K8S_RELEASE_REM='/var/lib/kubernetes/install/local'
-
-# Load the config file if it exists.
-require 'yaml'
-$config = YAML.load_file(CONFIG)
-if (!File.file?(CONFIG))
-  puts "missing config file: #{CONFIG}"
-  exit 1
+def check_k8s_local()
+  return if $k8s != 'local'
+  abort("invalid k8s=#{$k8s}") if !File.exist?(K8S_RELEASE_LCL)
+  $k8s=K8S_RELEASE_LCL
 end
 
-require 'yaml'
-$config = YAML.load_file(CONFIG)
+def require_ca()
+  if File.file?(TLS_CA_CRT) && File.file?(TLS_CA_KEY)
+    $ca={:crt=>File.read(TLS_CA_CRT), :key=>File.read(TLS_CA_KEY)}
+    return
+  end
 
-$k8s = $config['k8s'] || abort('k8s required')
-$box = $config['box'] || abort('box required')
-$cpu = $config['cpu'] || abort('cpu required')
-$mem = $config['mem'] || abort('mem required')
-$num_nodes = $config['nodes'] || abort('nodes required')
-$num_controllers = $config['controllers'] || abort('controllers required')
-$num_both = $config['both'] || abort('both required')
-$num_workers = $num_nodes-$num_controllers
+  require 'openssl'
 
-# If $k8s is set to "local" then look in the default folder for the
-# staged tarballs.
-if ($k8s == 'local')
-  if File.exist?(K8S_RELEASE_LCL)
-    $k8s=K8S_RELEASE_LCL
+  days    = (ENV['TLS_DAYS'] || '365').to_i
+  subj_c  = ENV['TLS_COUNTRY_NAME'] || 'US'
+  subj_st = ENV['TLS_STATE_OR_PROVINCE_NAME'] || 'California'
+  subj_l  = ENV['TLS_LOCALITY_NAME'] || 'Palo Alto'
+  subj_o  = ENV['TLS_ORG_NAME'] || 'VMware'
+  subj_ou = ENV['TLS_OU_NAME'] || 'CNX'
+  subj_cn = ENV['TLS_COMMON_NAME'] || 'CNX CICD CA'
+  subj_e  = ENV['TLS_EMAIL'] || 'cnx@vmware.com'
+  subj    = "/C=#{subj_c}/ST=#{subj_st}/L=#{subj_l}/O=#{subj_o}/OU=#{subj_ou}/CN=#{subj_cn}/emailAddress=#{subj_e}"
+
+  key        = OpenSSL::PKey::RSA.new(2048)
+  public_key = key.public_key
+
+  cert            = OpenSSL::X509::Certificate.new
+  cert.subject    = cert.issuer = OpenSSL::X509::Name.parse(subj)
+  cert.not_before = Time.now
+  cert.not_after  = Time.now + days * 24 * 60 * 60
+  cert.public_key = public_key
+  cert.serial     = SecureRandom.hex.to_i(16)
+  cert.version    = 2
+
+  ef = OpenSSL::X509::ExtensionFactory.new
+  ef.subject_certificate = cert
+  ef.issuer_certificate = cert
+  cert.extensions = [
+    ef.create_extension("basicConstraints","CA:TRUE", true),
+    ef.create_extension("keyUsage", "digitalSignature,cRLSign,keyCertSign", true),
+    ef.create_extension("subjectKeyIdentifier", "hash"),
+  ]
+
+  cert.sign key, OpenSSL::Digest::SHA1.new
+
+  $ca={:crt=>cert.to_pem, :key=>key.to_pem}
+  File.write(TLS_CA_CRT, $ca[:crt])
+  File.write(TLS_CA_KEY, $ca[:key])
+end
+
+def require_uuid()
+  file="#{VAGRANT_DOTFILE_PATH}/uuid"
+  if File.file?(file)
+    $uuid=File.read(file)
   else
-    abort("invalid k8s=#{$k8s}")
+    $uuid=SecureRandom.uuid.downcase
+    File.write(file, $uuid)
   end
 end
 
-# Generate/get the UUID seed.
-$uuid_file=File.join(ENV['VAGRANT_DOTFILE_PATH'] || '.vagrant', 'uuid')
-if File.file?($uuid_file)
-  $uuid=File.read($uuid_file)
-else
-  $uuid=SecureRandom.uuid.downcase
-  File.write($uuid_file, $uuid)
+def require_config()
+  abort "missing config file: #{CONFIG}" if !File.file?(CONFIG)
+  config=YAML.load_file(CONFIG)
+  $k8s = config['k8s'] || abort('k8s required')
+  $box = config['box'] || abort('box required')
+  $cpu = config['cpu'] || abort('cpu required')
+  $mem = config['mem'] || abort('mem required')
+  $num_nodes = config['nodes'] || abort('nodes required')
+  $num_controllers = config['controllers'] || abort('controllers required')
+  $num_both = config['both'] || abort('both required')
+  $num_workers = $num_nodes-$num_controllers
 end
 
-# Create the node definitions.
-$nodes = []
-for i in 1..$num_nodes do
-  if (i <= $num_controllers)
-    node_type = i <= ($num_controllers-$num_both) ? "controller" : "both"
-    host_name = sprintf("c%02d", i)
-  else
-    node_type = "worker"
-    host_name = sprintf("w%02d", i-$num_controllers)
+def require_nodes()
+  file="#{VAGRANT_DOTFILE_PATH}/nodes.yaml"
+  if File.file?(file)
+    $nodes=YAML.load_file(file)
+    return
   end
-  uuid_suffix = i.to_s(16)
-  uuid = "#{$uuid[0..-(uuid_suffix.length+1)]}#{uuid_suffix}"
-  $nodes << {
-    :host       => host_name,
-    :type       => node_type,
-    :uuid       => uuid,
-    :serial     => to_serial(uuid),
-    :k8s_uuid   => convert_k8s_uuid(uuid),
-    :k8s_serial => to_serial(convert_k8s_uuid(uuid)),
-  }
+  $nodes = []
+  for i in 1..$num_nodes do
+    if (i <= $num_controllers)
+      node_type = i <= ($num_controllers-$num_both) ? "controller" : "both"
+      host_name = sprintf("c%02d", i)
+    else
+      node_type = "worker"
+      host_name = sprintf("w%02d", i-$num_controllers)
+    end
+    uuid_suffix = i.to_s(16)
+    uuid = "#{$uuid[0..-(uuid_suffix.length+1)]}#{uuid_suffix}"
+    $nodes << {
+      :host       => host_name,
+      :type       => node_type,
+      :uuid       => uuid,
+      :serial     => to_serial(uuid),
+      :k8s_uuid   => convert_k8s_uuid(uuid),
+      :k8s_serial => to_serial(convert_k8s_uuid(uuid)),
+      :mac        => "005056#{SecureRandom.hex[0..5]}",
+    }
+  end
+  File.write(file, $nodes.to_yaml)
 end
-$nodes_file=File.join(ENV['VAGRANT_DOTFILE_PATH'] || '.vagrant', 'nodes')
-File.open($nodes_file,"w") do |f|
-  PP.pp($nodes, f)
+
+def require_etcd()
+  return if $num_nodes <= 1
+  file="#{VAGRANT_DOTFILE_PATH}/etcd.disco"
+  if File.file?(file)
+    $etcd_disco=File.read(file)
+  else
+    require "net/http"; require "uri"
+    uri=URI.parse("https://discovery.etcd.io/new?size=#{$num_controllers}")
+    $etcd_disco=Net::HTTP.get_response(uri).body
+    File.write(file, $etcd_disco)
+  end
 end
 
-# The Photon box ships with a static machine-id, which means
-# in a multi-machine deployment, all the boxes will have the
-# same DHCP-provided IP address. This causes yakity to break
-# since etcd is advertising IP addresses that must be unique.
-#
-# This script disables the host-only NIC, recreates the
-# machine-id, and reenables the host-only NIC, thereby causing
-# the machine to request a new, unique IP address from the DHCP
-# server.
-$init_photon_script = <<-EOF
-ifconfig eth1 down
-rm -f /etc/machine-id
-dbus-uuidgen --ensure=/etc/machine-id
-ifconfig eth1 up
+########################################################################
+##                               MAIN                                 ##
+########################################################################
 
-rm -f /etc/modules-load.d/virtualbox.conf
-tdnf install -y gawk \
-                unzip \
-                lsof \
-                bindutils \
-                iputils \
-                tar
-EOF
+# Abort Vagrant if there is no config file
+require_config
 
-$init_guest_script = <<-EOF
-mkdir -p /var/lib/yakity /opt/bin
-chown vagrant /var/lib/yakity /opt/bin
-EOF
+# Ensure there is a certificate authority cert/key pair.
+require_ca
 
-# Ubuntu doesn't automatically source /etc/profile, so let's do that.
-$init_ubuntu_script = <<-EOF
-echo '. /etc/profile' >>/home/vagrant/.bashrc
-EOF
+# Ensure there is an etcd discovery URL if there is more than one node.
+require_etcd
 
-# If there is more than one node an etcd discovery URL needs to be generated.
-$etcd_disco = $num_nodes <= 1 ?
-  "" : `curl -sSL https://discovery.etcd.io/new?size=#{$num_controllers}`
+# Ensure there is a UUID seed value at VAGRANT_DOTFILE_PATH/uuid
+require_uuid
 
-# Generate a self-signed CA to use with the box(es).
-if (not File.file?(TLS_CA_CRT) or not File.file?(TLS_CA_KEY))
-  `TLS_CA_CRT=#{TLS_CA_CRT} \
-  TLS_CA_KEY=#{TLS_CA_KEY} \
-  #{NEW_CA_SH} >/dev/null 2>&1`
-end
-# Generate a cert for the k8s-admin user.
-if (not File.file?(K8S_ADMIN_CRT) or not File.file?(K8S_ADMIN_KEY))
-  `TLS_CA_CRT=#{TLS_CA_CRT} \
-  TLS_CA_KEY=#{TLS_CA_KEY} \
-  TLS_CRT_OUT=#{K8S_ADMIN_CRT} \
-  TLS_KEY_OUT=#{K8S_ADMIN_KEY} \
-  TLS_SAN=false \
-  TLS_ORG_NAME="system:masters" \
-  TLS_COMMON_NAME=admin \
-  #{NEW_CERT_SH} >/dev/null 2>&1`
-end
+# Create the node definitions from which the boxes are derived.
+require_nodes
 
 Vagrant.configure("2") do |config|
   config.vm.box = $box
@@ -215,60 +264,13 @@ Vagrant.configure("2") do |config|
     end
   end
 
-  # Generate the kubeconfig file.
-  config.trigger.after :up do |trigger|
-    trigger.info    = "Generating kubeconfig"
-    trigger.only_on = /(?i)c01/
-    trigger.run     = {
-      :inline => <<-SHELL
-        /bin/sh -c 'KUBECONFIG="#{KUBECONFIG}" \
-        TLS_CA_CRT="#{TLS_CA_CRT}" \
-        TLS_CA_KEY="#{TLS_CA_KEY}" \
-        TLS_CRT="#{K8S_ADMIN_CRT}" \
-        TLS_KEY="#{K8S_ADMIN_KEY}" \
-        SERVER="https://127.0.0.1:$(vagrant port --guest 443 c01)" \
-        USER="admin" \
-        #{NEW_KUBECONFIG_SH} >/dev/null 2>&1'
-      SHELL
-    }
-  end
-
-  # Generate the DNS config file.
-  config.trigger.after :up do |trigger|
-    trigger.info    = "Generating DNS config"
-    trigger.only_on = /(?i)c01/
-    trigger.run     = {
-      :inline => <<-SHELL
-        /bin/sh -c 'echo "$(vagrant port --guest 53 c01)" >"#{DNSCONFIG}"'
-      SHELL
-    }
-  end
-
-  # Delete the kubeconfig file when the first node is destroyed.
-  config.trigger.after :destroy do |trigger|
-    trigger.info    = "Deleting kubeconfig"
-    trigger.only_on = /(?i)c01/
-    trigger.run     = {
-      :inline => "/bin/rm -f '#{KUBECONFIG}'"
-    }
-  end
-
-  # Delete the DNS config file when the first node is destroyed.
-  config.trigger.after :destroy do |trigger|
-    trigger.info    = "Deleting DNS config"
-    trigger.only_on = /(?i)c01/
-    trigger.run     = {
-      :inline => "/bin/rm -f '#{DNSCONFIG}'"
-    }
-  end
-
   # Create the node(s)
   $nodes.each do |node_config|
     config.vm.define node_config[:host] do |node|
 
       node.vm.network "private_network",
         type: "dhcp",
-        mac:  "005056#{SecureRandom.hex[0..5]}"
+        mac:  node_config[:mac]
 
       node.vm.provider VAGRANT_PROVIDER do |p|
         node_uuid=node_config[:uuid]
@@ -294,33 +296,25 @@ Vagrant.configure("2") do |config|
       # Assign the fully-qualified host name.
       node.vm.hostname = "#{node_config[:host]}.yakity"
 
-      # Forward some ports for the control plane nodes.
-      if (/(?i)^both|controller$/ =~ node_config[:type])
-        node.vm.network "forwarded_port",
-          guest: 443, host: 6443, auto_correct: true
-        node.vm.network "forwarded_port",
-          guest:  53, host: 6553, auto_correct: true
-      end
-
       # Handle box-specific requirements.
       if (/(?i)photon/ =~ $box)
         node.vm.provision "init-guest", type: "shell" do |s|
           s.inline = <<-SHELL
-            #{$init_guest_script}
-            #{$init_photon_script}
+            #{INIT_GUEST_SCRIPT}
+            #{INIT_PHOTON_SCRIPT}
           SHELL
         end
       elsif (/(?i)ubuntu/ =~ $box)
         node.vm.provision "init-guest", type: "shell" do |s|
           s.inline = <<-SHELL
-            #{$init_guest_script}
-            #{$init_ubuntu_script}
+            #{INIT_GUEST_SCRIPT}
+            #{INIT_UBUNTU_SCRIPT}
           SHELL
         end
       else
         node.vm.provision "init-guest", type: "shell" do |s|
           s.inline = <<-SHELL
-            #{$init_guest_script}
+            #{INIT_GUEST_SCRIPT}
           SHELL
         end
       end
@@ -328,27 +322,52 @@ Vagrant.configure("2") do |config|
       if (ENV['BIN_DIR'])
         node.vm.provision "file",
           source:       "#{ENV['BIN_DIR']}",
-          destination:  "/opt/bin"
+          destination:  "/tmp/opt/bin"
       end
 
-      # Copy files to the VM.
-      copy_file_to_dir node, YAKITY_SH
-      copy_file_to_dir node, YAKITY_SERVICE
-      copy_file_to_dir node, TLS_CA_CRT
-      copy_file_to_dir node, TLS_CA_KEY
+      # Copy the yakity script and certificate authority cert/key pair
+      # to the /tmp folder on the VM.
+      copy_file_to_dir(node, '../yakity.sh')
+      copy_file_to_dir(node, 'yakity.service')
+      copy_file_to_dir(node, 'tail-log.sh')
+      copy_file_to_dir(node, TLS_CA_CRT)
+      copy_file_to_dir(node, TLS_CA_KEY)
 
       node.vm.provision "init-yakity", type: "shell" do |s|
         s.inline = <<-SHELL
-          mv /var/lib/yakity/ca.* /etc/ssl/
-          chown root:root /etc/ssl/ca.crt /etc/ssl/ca.key
-          chmod 0644 /etc/ssl/ca.crt
-          chmod 0400 /etc/ssl/ca.key
+          # Move the yakity script into /var/lib/yakity
+          # and ensure it is executable.
+          mv /tmp/yakity.sh /var/lib/yakity
+          chown root:root /var/lib/yakity/yakity.sh
           chmod 0755 /var/lib/yakity/yakity.sh
-          chmod -R 0755 /opt/bin
 
+          # Move the tail-log script into /var/lib/yakity
+          # and ensure it is executable.
+          mv /tmp/tail-log.sh /var/lib/yakity
+          chown root:root /var/lib/yakity/tail-log.sh
+          chmod 0755 /var/lib/yakity/tail-log.sh
+
+          # Move the yakity service into /var/lib/yakity.
+          mv /tmp/yakity.service /var/lib/yakity
+          chown root:root /var/lib/yakity/yakity.service
+
+          # Move the certificate authority cert/key pair
+          # into /etc/ssl and set the file permissions.
+          mv /tmp/ca.crt /tmp/ca.key /etc/ssl/
+          chown root:root /etc/ssl/ca.crt /etc/ssl/ca.key
+          chmod 0644 /etc/ssl/ca.crt; chmod 0400 /etc/ssl/ca.key
+
+          # If /tmp/opt/bin exists then move everything in it
+          # to /opt/bin and mark all the contents as executable.
+          if [ -e /tmp/opt/bin ]; then
+            mv /tmp/opt/bin/* /opt/bin
+            chown -R root:root /opt/bin
+            chmod -R 0755 /opt/bin
+          fi
+
+          # Write the yakity configuration file.
           nic=$(ip a | grep '^3:' | awk -F: '{print $2}' | tr -d '[:space:]')
           ip4=$(ip route get dev "${nic}" 1 | awk '{print $NF;exit}')
-
           cat <<EOF >/etc/default/yakity
 K8S_VERSION="#{$k8s_version}"
 IPV4_ADDRESS="${ip4}"
@@ -359,16 +378,18 @@ NODE_TYPE="#{node_config[:type]}"
 INSTALL_CONFORMANCE_TESTS="false"
 HOST_NAME_OVERRIDE="true"
 FAIL_SWAP_ON="false"
-VCSIM="#{ENV['VCSIM'] || 'true'}"
-CLOUD_PROVIDER="#{ENV['CLOUD_PROVIDER'] || 'external'}"
-CLOUD_PROVIDER_EXTERNAL="#{ENV['CLOUD_PROVIDER_EXTERNAL'] || 'vsphere'}"
+VCSIM="#{VCSIM}"
+CLOUD_PROVIDER="#{CLOUD_PROVIDER}"
+CLOUD_PROVIDER_EXTERNAL="#{CLOUD_PROVIDER_EXTERNAL}"
+CLOUD_PROVIDER_IMAGE="#{CLOUD_PROVIDER_IMAGE}"
 EOF
 
+          # Enable the yakity service (but do not start it).
           systemctl -l enable /var/lib/yakity/yakity.service
         SHELL
       end
 
-      # Start yakity.
+      # Start the yakity service.
       node.vm.provision "start-yakity", type: "shell" do |s|
         s.inline = "systemctl -l --no-block start yakity"
       end

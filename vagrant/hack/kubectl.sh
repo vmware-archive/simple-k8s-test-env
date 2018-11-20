@@ -25,4 +25,9 @@ export PROGRAM="kubectl"
 # shellcheck disable=SC1090
 . "$(dirname "${0}")/common.sh"
 
-exec kubectl "${@}"
+#exec kubectl "${@}"
+for a in "${@}"; do
+  { [ -z "${args}" ] && args="'${a}'"; } || args="${args} '${a}'"
+done
+
+exec vagrant ssh --no-tty c01 -c "kubectl ${args}"

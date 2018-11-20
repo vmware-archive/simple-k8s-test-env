@@ -20,18 +20,93 @@
 #
 
 export PROGRAM="vagrant"
+_0d="$(dirname "${0}")"
 
 # Load the commons library.
 # shellcheck disable=SC1090
 . "$(dirname "${0}")/common.sh"
 
+get_system_pods() {
+  vagrant ssh --no-tty c01 \
+    -c "kubectl -n kube-system get pods" 2>/dev/null
+}
+
+get_cluster_status() {
+  vagrant ssh --no-tty c01 -c "kubectl get all"
+}
+
+get_component_status() {
+  vagrant ssh --no-tty c01 -c "kubectl get cs"
+}
+
+get_nodes() {
+  vagrant ssh --no-tty c01 -c "kubectl get nodes"
+}
+
+kube_dns_running() {
+  get_system_pods | grep -q 'kube-dns.\{0,\}[[:space:]]Running'
+}
+
+wait_until_cluster_is_online() {
+  printf '\nwaiting for the cluster to finish coming online...'
+  _i=0 && while [ "${_i}" -lt "300" ] && ! kube_dns_running; do
+    printf '.'; sleep 1; _i=$((_i+1))
+  done
+  [ "${_i}" -lt "300" ] || fatal "timed out"
+  echo; echo
+}
+
+tail_log() {
+  vagrant ssh --no-tty c01 -c 'sudo /var/lib/yakity/tail-log.sh' || \
+    fatal "failed to follow cluster deployment progress"
+}
+
+vagrant_up_slowly() {
+  { vagrant up --provision-with init-guest && \
+    vagrant provision --provision-with file,init-yakity && \
+    vagrant provision --provision-with start-yakity; } || \
+    fatal "vagrant up failed"
+}
+
+print_congrats() {
+  echo 'CLUSTER ONLINE'
+  echo '=============='
+  get_cluster_status && echo
+  echo 'COMPONENT STATUS'
+  echo '================'
+  get_component_status && echo
+  echo 'NODES'
+  echo '====='
+  get_nodes && echo
+  echo 'SYSTEM PODS'
+  echo '==========='
+  get_system_pods && echo
+  cat <<EOF
+EXAMPLES
+========
+  get status       ${_0d}/kubectl.sh -- get cs
+  get nodes        ${_0d}/kubectl.sh -- get nodes
+  get system pods  ${_0d}/kubectl.sh -- get -n kube-system pods
+  shell access     ${_0d}/vagrant.sh -- ssh NODE_NAME
+  destroy cluster  ${_0d}/vagrant.sh -- destroy -f
+EOF
+}
+
 case "${1}" in
 up)
   print_context
-  # shellcheck disable=SC1004
-  exec /bin/sh -c 'vagrant up --provision-with init-guest && \
-    vagrant provision --provision-with file,init-yakity && \
-    vagrant provision --provision-with start-yakity'
+
+  # Bring up the boxes in a specific manner.
+  vagrant_up_slowly
+
+  # Tail the log on the first box until it's no longer being written.
+  tail_log
+
+  # Wait until the cluster is finished coming online.
+  wait_until_cluster_is_online
+
+  # Inform the user that the cluster is now online.
+  print_congrats
   ;;
 vup)
   print_context

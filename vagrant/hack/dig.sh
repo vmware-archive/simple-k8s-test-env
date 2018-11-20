@@ -25,5 +25,11 @@ export PROGRAM="dig"
 # shellcheck disable=SC1090
 . "$(dirname "${0}")/common.sh"
 
-dns_port="$(cat "${DNSCONFIG}")"
-exec dig +domain=yakity -4 +tcp @127.0.0.1 -p "${dns_port}" "${@}"
+#dns_port="$(cat "${DNSCONFIG}")"
+#exec dig +domain=yakity -4 +tcp @127.0.0.1 -p "${dns_port}" "${@}"
+
+for a in "${@}"; do
+  { [ -z "${args}" ] && args="'${a}'"; } || args="${args} '${a}'"
+done
+
+exec vagrant ssh --no-tty c01 -c "dig +domain=yakity -4 +tcp @127.0.0.1 ${args}"
