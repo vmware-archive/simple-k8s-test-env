@@ -10,7 +10,7 @@ Yakity (_**Y**et **A**nother **K**ubernetes **I**nstaller
 
 ## Quick start
 The quickest way to provision a Kubernetes cluster with Yakity is on vSphere 
-using the [OVA](doc/provision-on-vsphere-with-ova.md).
+using the [OVA](ova/doc/provision-on-vsphere-with-ova.md).
 
 ## Getting started
   * [How does yakity work?](#how-does-yakity-work)
