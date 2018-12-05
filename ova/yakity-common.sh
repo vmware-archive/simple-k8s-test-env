@@ -397,3 +397,35 @@ is_file_empty() {
     grep -q '[[:space:]]\{0,\}' "${1}"
 }
 export is_file_empty
+
+# Returns a line-delimited list of the IPv4 addresses of all the members
+# of the cluster, both control plane and worker nodes.
+get_member_ipv4_addresses() {
+  host -t A "$(hostname -d)" | grep -v 'alias' | awk '{print $NF}'
+}
+export get_member_ipv4_addresses
+
+# Returns a line-delimited list of the IPv4 addresses for this host.
+get_self_ipv4_addresses() {
+  ip a | grep 'inet ' | awk '{print $2}' | grep -vF '127.0.0.1' | sed 's~/24~~'
+}
+export get_self_ipv4_addresses
+
+# Returns the FQDN for a host by doing a reverse DNS query using the host's
+# IPv4 address.
+get_host_fqdn_from_ipv4_address() {
+  host "${1}" | awk '{print $NF}' | sed 's/\.$//'
+}
+export get_host_fqdn_from_ipv4_address
+
+# Makes a directory and sets its permissions to 0755.
+mkdir_and_chmod() { mkdir -p "${@}" && chmod 0755 "${@}"; }
+export mkdir_and_chmod
+
+# Prints the value of an environment variable at the INFO log level.
+info_env_var() {
+  while [ -n "${1}" ]; do
+    info "${1}=$(eval "echo \$${1}")" && shift
+  done
+}
+export info_env_var

@@ -28,25 +28,9 @@
 # distribution's inotify-tools (or equivalent) package.
 require_program inotifywait
 
-mkdir_and_chmod() { mkdir -p "${@}" && chmod 0755 "${@}"; }
-
-info_env_var() {
-  while [ -n "${1}" ]; do
-    info "${1}=$(eval "echo \$${1}")" && shift
-  done
-}
-
 # A flag that indicates whether to skip uploads that are the same as the
 # files on the host.
 SKIP_DUPLICATES="$(parse_bool "${SKIP_DUPLICATES}" true)"
-
-# The file used to track which hosts have been validated.
-HOSTS_FILE=/var/lib/yakity/kube-update/.hosts
-mkdir_and_chmod "$(dirname ${HOSTS_FILE})"
-touch "${HOSTS_FILE}"
-
-# Get the name (sans domain) of this host.
-HOST_NAME="$(hostname -s)"
 
 # The directories where clients and peers upload files.
 CLIENT_DIR=/var/lib/yakity/kube-update/client-uploads
@@ -62,29 +46,6 @@ info_env_var CLIENT_DIR PEER_IN_DIR PEER_OUT_DIR
 # The area where uploaded files are moved while being processed.
 TEMP_FILE_AREA="$(mktemp -d)"; info_env_var TEMP_FILE_AREA
 
-# The following environment variables are the locations of the eponymous
-# Kubernetes binaries.
-KUBECTL_BIN="${KUBECTL_BIN:-${BIN_DIR}/kubectl}"
-KUBELET_BIN="${KUBELET_BIN:-${BIN_DIR}/kubelet}"
-KUBE_APISERVER_BIN="${KUBE_APISERVER_BIN:-${BIN_DIR}/kube-apiserver}"
-KUBE_CONTROLLER_MANAGER_BIN="${KUBE_CONTROLLER_MANAGER_BIN:-${BIN_DIR}/kube-controller-manager}"
-KUBE_SCHEDULER_BIN="${KUBE_SCHEDULER_BIN:-${BIN_DIR}/kube-scheduler}"
-KUBE_PROXY_BIN="${KUBE_PROXY_BIN:-${BIN_DIR}/kube-proxy}"
-
-mkdir_and_chmod "$(dirname "${KUBECTL_BIN}")" \
-                "$(dirname "${KUBELET_BIN}")" \
-                "$(dirname "${KUBE_APISERVER_BIN}")" \
-                "$(dirname "${KUBE_CONTROLLER_MANAGER_BIN}")" \
-                "$(dirname "${KUBE_SCHEDULER_BIN}")" \
-                "$(dirname "${KUBE_PROXY_BIN}")"
-
-info_env_var KUBECTL_BIN \
-             KUBELET_BIN \
-             KUBE_APISERVER_BIN \
-             KUBE_CONTROLLER_MANAGER_BIN \
-             KUBE_SCHEDULER_BIN \
-             KUBE_PROXY_BIN
-
 scp_file() {
   _file_path="${1}"
   _host_name="${2}"
@@ -94,24 +55,24 @@ scp_file() {
     error "failed to scp ${_file_path} to ${_host_name}"
 }
 
-cluster_members="$(rpc_get CLUSTER_MEMBERS)"
+# Store a list of the IPv4 addresses for this host.
+self_ipv4_addresses=$(get_self_ipv4_addresses)
+
 process_outload() {
   _file_dir="${1}"
   _file_name="${2}"
   _file_path="${_file_dir}/${_file_name}"
 
-  for _member in ${cluster_members}; do
-    _member_host_name="$(parse_member_host_name "${_member}")"
-
-    if [ "${_member_host_name}" = "${HOST_NAME}" ]; then
-      info "skipping outload for self: ${_member_host_name}"
+  for _addr in $(get_member_ipv4_addresses); do
+    if echo "${self_ipv4_addresses}" | grep -qF "${_addr}"; then
+      info "skipping outload for self: ${_addr}"
       continue
     fi
 
-    info "uploading ${_file_path} to ${_member_host_name}"
+    info "uploading ${_file_path} to ${_addr}"
     scp -o StrictHostKeyChecking=no \
-      "${_file_path}" "${_member_host_name}:${PEER_IN_DIR}/" || \
-      error "failed to scp ${_file_path} to ${_member_host_name}"
+      "${_file_path}" "${_addr}:${PEER_IN_DIR}/" || \
+      error "failed to scp ${_file_path} to ${_addr}"
   done
 
   rm -f "${_file_path}"
@@ -119,9 +80,7 @@ process_outload() {
 }
 
 process_upload() {
-  _file_dir="${1}"
-  _file_name="${2}"
-  _file_path="${_file_dir}/${_file_name}"
+  _file_dir="${1}"; _file_name="${2}"; _file_path="${_file_dir}/${_file_name}"
   _upload_type=peer
   if [ "${_file_dir}" = "${CLIENT_DIR}" ]; then _upload_type=client; fi
 
@@ -136,6 +95,9 @@ process_upload() {
   else
     cp -f "${_file_path}" "${TEMP_FILE_AREA}/"
   fi
+
+  # If this is a client upload then copy the file into the watched peer outload
+  # directory. Otherwise just remove the file.
   if [ "${_upload_type}" = "client" ]; then
     mv -f "${_file_path}" "${PEER_OUT_DIR}/"
   else
@@ -164,6 +126,16 @@ watch_peer_out_dir() {
   done
 }
 
+replace_and_restart_service() {
+  _service_name="${1}"; _src_bin="${2}"; _tgt_bin="${3}"
+  systemctl -l stop "${_service_name}" || \
+    error "failed to stop service ${_service_name}"
+  mv -f "${_src_bin}" "${_tgt_bin}" || \
+    error "failed to replace ${_tgt_bin}"
+  systemctl -l start "${_service_name}" || \
+    error "failed to start service ${_service_name}"
+}
+
 process_new_file() {
   _file_dir="${1}"
   _file_name="${2}"
@@ -173,44 +145,18 @@ process_new_file() {
   # If the file path does not exist then skip it.
   [ -f "${_file_path}" ] || return 0
 
-  unset _service_name _tgt_bin
-
   # The action taken on each file depends on the file's name.
   _src_bin="${_file_path}"
-  case "${_file_name}" in
-  kubectl)
-    _tgt_bin="${KUBECTL_BIN}"
-    ;;
-  kubelet)
-    _service_name="${_file_name}"
-    _tgt_bin="${KUBELET_BIN}"
-    ;;
-  kube-apiserver)
-    _service_name="${_file_name}"
-    _tgt_bin="${KUBE_APISERVER_BIN}"
-    ;;
-  kube-controller-manager)
-    _service_name="${_file_name}"
-    _tgt_bin="${KUBE_CONTROLLER_MANAGER_BIN}"
-    ;;
-  kube-scheduler)
-    _service_name="${_file_name}"
-    _tgt_bin="${KUBE_SCHEDULER_BIN}"
-    ;;
-  kube-proxy)
-    _service_name="${_file_name}"
-    _tgt_bin="${KUBE_PROXY_BIN}"
-    ;;
-  esac
-
-  if [ -z "${_tgt_bin}" ]; then
-    rm -fr "${_src_bin}"
+  _src_bin_base_name="$(basename "${_src_bin}")"
+  _tgt_bin="${BIN_DIR}/${_src_bin_base_name}"
+  if [ ! -f "${_tgt_bin}" ]; then
+    debug "skipping unknown file: ${_src_bin}"
     return 0
   fi
 
-  info "processing known file: ${_src_bin}"
+  info "processing known file: ${_tgt_bin}"
 
-  if [ -f "${_tgt_bin}" ] && [ "${SKIP_DUPLICATES}" = "true" ]; then
+  if [ "${SKIP_DUPLICATES}" = "true" ]; then
     _tgt_hash="$(sha1sum -b "${_tgt_bin}" | awk '{print $1}')"
     _src_hash="$(sha1sum -b "${_src_bin}" | awk '{print $1}')"
     if [ "${_tgt_hash}" = "${_src_hash}" ]; then
@@ -220,14 +166,18 @@ process_new_file() {
   fi
   chmod 0755 "${_src_bin}"
 
-  if [ -z "${_service_name}" ]; then
-    mv -f "${_src_bin}" "${_tgt_bin}"
-  elif systemctl is-enabled "${_service_name}" >/dev/null 2>&1; then
-    systemctl -l stop "${_service_name}" && \
-      mv -f "${_src_bin}" "${_tgt_bin}" && \
-      systemctl -l start "${_service_name}"
+  _service_name="${_src_bin_base_name}"
+  if systemctl is-enabled "${_service_name}" >/dev/null 2>&1; then
+    replace_and_restart_service "${_service_name}" \
+                                "${_src_bin}" \
+                                "${_tgt_bin}" || \
+      { error "failed to update service ${_service_name}"; return 0; }
+    info "updated service ${_service_name}"
+  else
+    mv -f "${_src_bin}" "${_tgt_bin}" || \
+      { error "failed to update ${_tgt_bin}"; return 0; }
+    info "updated ${_tgt_bin}"
   fi
-  info "replaced ${_tgt_bin}"
 }
 
 watch_temp_file_area() {
