@@ -136,7 +136,7 @@ file.
       <vmw:Config ovf:required="false" vmw:key="firmware" vmw:value="bios"/>
       <vmw:Config ovf:required="false" vmw:key="virtualICH7MPresent" vmw:value="false"/>
       <vmw:ExtraConfig ovf:required="false" vmw:key="nvram" vmw:value="ovf:/file/file2"/>
-      <vmw:ExtraConfig ovf:required="false" vmw:key="disk.EnableUUID" vmw:value="1"/>
+      <vmw:ExtraConfig ovf:required="false" vmw:key="disk.EnableUUID" vmw:value="true"/>
     </VirtualHardwareSection>
     <vmw:StorageSection ovf:required="false" vmw:group="group1">
       <Info>Storage policy group reference</Info>
