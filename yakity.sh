@@ -4236,8 +4236,8 @@ config_vcsim_service() {
   cat <<EOF >/var/lib/vcsim/create-vms.sh
 #!/bin/sh
 
-set -o pipefail || echo 'pipefail unsupported' 1>&2
 set -e
+! /bin/sh -c 'set -o pipefail' >/dev/null 2>&1 || set -o pipefail
 
 [ -f "\${VM_FILE}" ] || exit 1
 
