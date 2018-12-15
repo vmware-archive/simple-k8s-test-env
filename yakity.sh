@@ -4328,12 +4328,12 @@ configure_vcsim() {
 #     Prints the first element in the list -- the newest file
 find_newest() {
   set +e
-  find "${1}" -name "${3}" -type f -exec file {} \; | \
+  _files=$(find "${1}" -name "${3}" -type f -exec file {} \; | \
     { grep -i "${2}" || true; } | \
     awk -F: '{print $1}' | \
-    tr '\n' '\0' | \
-    xargs -0 ls -1 -t | \
-    head -n 1
+    tr '\n' '\0')
+  [ -n "${_files}" ] || { set -e && return 0; }
+  printf '%s' "${_files}" | xargs -0 ls -1 -t | head -n 1
   set -e
 }
 
