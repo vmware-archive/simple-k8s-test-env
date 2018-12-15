@@ -4792,10 +4792,10 @@ install_packages() {
     info "installing packages via tdnf"
     tdnf update --assumeno
     debug "tdnf install lsof bindutils iputils tar"
-    tdnf -y install lsof bindutils iputils tar || true
+    tdnf -yq install lsof bindutils iputils tar || true
     if [ ! "${NODE_TYPE}" = "controller" ]; then
       debug "tdnf install socat ipset libnetfilter_conntrack libnetfilter_cthelper libnetfilter_cttimeout libnetfilter_queue"
-      tdnf -y install socat ipset \
+      tdnf -yq install socat ipset \
         libnetfilter_conntrack libnetfilter_cthelper \
         libnetfilter_cttimeout libnetfilter_queue || true
       debug "rpm -ivh conntrack-tools"
