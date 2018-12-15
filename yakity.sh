@@ -4242,7 +4242,7 @@ set -e
 [ -f "\${VM_FILE}" ] || exit 1
 
 # Wait until the simulator is responding to create the VMs.
-while ! \${BIN_DIR}/govc ls >/dev/null 2>&1; do sleep 1; done
+while ! ${BIN_DIR}/govc ls >/dev/null 2>&1; do sleep 1; done
 
 while IFS='' read -r vm || [ -n "\${vm}" ]; do
   host_name=\$(echo "\${vm}" | awk -F, '{print \$1}')
