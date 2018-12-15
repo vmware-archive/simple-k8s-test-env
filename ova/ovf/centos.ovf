@@ -15,7 +15,6 @@ file.
 <Envelope xmlns="http://schemas.dmtf.org/ovf/envelope/1" xmlns:ovf="http://schemas.dmtf.org/ovf/envelope/1" xmlns:vmw="http://www.vmware.com/schema/ovf" xmlns:rasd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData" xmlns:vssd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_VirtualSystemSettingData">
   <References>
     <File ovf:id="file1" ovf:href="yakity-centos-1.vmdk"/>
-    <File ovf:id="file2" ovf:href="yakity-centos-2.nvram" ovf:size="8684"/>
   </References>
   <DiskSection>
     <Info>List of the virtual disks</Info>
@@ -137,7 +136,6 @@ file.
       <vmw:Config ovf:required="false" vmw:key="bootOptions.efiSecureBootEnabled" vmw:value="false"/>
       <vmw:Config ovf:required="false" vmw:key="firmware" vmw:value="bios"/>
       <vmw:Config ovf:required="false" vmw:key="virtualICH7MPresent" vmw:value="false"/>
-      <vmw:ExtraConfig ovf:required="false" vmw:key="nvram" vmw:value="ovf:/file/file2"/>
       <vmw:ExtraConfig ovf:required="false" vmw:key="disk.EnableUUID" vmw:value="true"/>
     </VirtualHardwareSection>
     <vmw:StorageSection ovf:required="false" vmw:group="group1">

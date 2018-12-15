@@ -40,15 +40,12 @@ turn-down: turn-down-$(LINUX_DISTRO)
 %-1.vmdk: $(OVF_EXPORT_DIR)/%-1.vmdk
 	cp -f $? $@
 
-%-2.nvram: $(OVF_EXPORT_DIR)/%-2.nvram
-	cp -f $? $@
-
 yakity-%.ovf: ovf/%.ovf ovf/product-section.ovf
 	@rm -f $@
 	cat $^ >>$@
 	printf '\n  </VirtualSystem>\n</Envelope>' >> $@
 
-yakity-%.ova: yakity-%.ovf yakity-%-1.vmdk yakity-%-2.nvram
+yakity-%.ova:	yakity-%.ovf yakity-%-1.vmdk
 	@rm -f $@
 	tar -cf $@ $^
 
@@ -64,4 +61,4 @@ upload-%: yakity-%.ova
 
 .PHONY: prep seal turn-up turn-down upload
 
-.PRECIOUS: %-1.vmdk %-2.nvram yakity-%.ovf
+.PRECIOUS: %-1.vmdk yakity-%.ovf
