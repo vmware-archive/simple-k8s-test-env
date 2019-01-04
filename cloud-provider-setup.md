@@ -119,4 +119,58 @@ Check that the services have come back up. If not, you can use journalctl to che
 $ journalctl -xeu kubelet
 ```
 
+### 6. Test the configuration
+
+The simplest way to test the configuration is to create a storage class and then a Persistent Volume Claim. See https://github.com/kubernetes/examples/tree/master/staging/volumes/vsphere for more detail on this. The examples I used were:
+
+```
+$ cat vsphere-sc.yaml 
+kind: StorageClass
+apiVersion: storage.k8s.io/v1beta1
+metadata:
+  name: fast
+provisioner: kubernetes.io/vsphere-volume
+parameters:
+    diskformat: zeroedthick
+    fstype:     ext4
+    datastore:  vsanDatastore
+
+$ cat test-pvc1.yaml 
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: pvcsc001
+  annotations:
+    volume.beta.kubernetes.io/storage-class: fast
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+
+$ kubectl create -f vsphere-sc.yaml 
+
+$ kubectl create -f test-pvc1.yaml
+
+$ kubectl describe pvc pvcsc001
+Name:          pvcsc001
+Namespace:     default
+StorageClass:  fast
+Status:        Bound
+Volume:        pvc-b3e70af3-1053-11e9-89e0-005056b4cdf4
+Labels:        <none>
+Annotations:   pv.kubernetes.io/bind-completed: yes
+               pv.kubernetes.io/bound-by-controller: yes
+               volume.beta.kubernetes.io/storage-class: fast
+               volume.beta.kubernetes.io/storage-provisioner: kubernetes.io/vsphere-volume
+Finalizers:    [kubernetes.io/pvc-protection]
+Capacity:      2Gi
+Access Modes:  RWO
+VolumeMode:    Filesystem
+Events:
+  Type       Reason                 Age                    From                         Message
+  ----       ------                 ----                   ----                         -------
+  Normal     ProvisioningSucceeded  96s                    persistentvolume-controller  Successfully provisioned volume pvc-b3e70af3-1053-11e9-89e0-005056b4cdf4 using kubernetes.io/vsphere-volume
+```
 
