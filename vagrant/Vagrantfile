@@ -22,7 +22,7 @@ require 'yaml'
 VAGRANT_DOTFILE_PATH=ENV['VAGRANT_DOTFILE_PATH'] || '.vagrant'
 VAGRANT_PROVIDER=ENV['VAGRANT_DEFAULT_PROVIDER'] || 'virtualbox'
 CONFIG=ENV['CONFIG'] || 'config.yaml'
-HOME=ENV['HOME'] || ENV['USERPROFILE'] || '/tmp/home'
+HOME=ENV['HOME'] || ENV['USERPROFILE'] || '/var/tmp/home'
 GOPATH=ENV['GOPATH'] || "#{HOME}/go"
 K8S_RELEASE_LCL="#{GOPATH}/src/k8s.io/kubernetes"
 K8S_RELEASE_REM='/var/lib/kubernetes/install/local'
@@ -33,6 +33,13 @@ CLOUD_PROVIDER=ENV['CLOUD_PROVIDER'] || 'external'
 CLOUD_PROVIDER_EXTERNAL=ENV['CLOUD_PROVIDER_EXTERNAL'] || 'vsphere'
 CLOUD_PROVIDER_IMAGE=ENV['CLOUD_PROVIDER_IMAGE'] || 'gcr.io/cloud-provider-vsphere/vsphere-cloud-controller-manager:latest'
 
+# The Photon box ships with a few issues:
+#
+# TEMP SPACE
+# The Photon box's temp space is too small to be of any use. Use
+# /var/tmp instead.
+#
+# MACHINE ID AND DHCP
 # The Photon box ships with a static machine-id, which means
 # in a multi-machine deployment, all the boxes will have the
 # same DHCP-provided IP address. This causes yakity to break
@@ -47,14 +54,16 @@ ifconfig eth1 down
 rm -f /etc/machine-id
 dbus-uuidgen --ensure=/etc/machine-id
 ifconfig eth1 up
+systemctl restart systemd-journald
 
 rm -f /etc/modules-load.d/virtualbox.conf
-tdnf install -y gawk \
-                unzip \
-                lsof \
-                bindutils \
-                iputils \
-                tar
+tdnf install -yq  gawk \
+                  unzip \
+                  lsof \
+                  bindutils \
+                  iputils \
+                  tar \
+                  psmisc
 EOF
 
 # Ubuntu doesn't load the /etc/profile by default. This fixes that.
@@ -64,12 +73,13 @@ EOF
 
 INIT_GUEST_SCRIPT = <<-EOF
 mkdir -p /var/lib/yakity /opt/bin
+chmod 0755 /opt /opt/bin
 EOF
 
 ########################################################################
 ##                             FUNCTIONS                              ##
 ########################################################################
-def copy_file_to_dir(node, src, dst="/tmp")
+def copy_file_to_dir(node, src, dst="/var/tmp")
   node.vm.provision "file",
     source:       src,
     destination:  "#{File.join(dst, File.basename(src))}"
@@ -322,11 +332,11 @@ Vagrant.configure("2") do |config|
       if (ENV['BIN_DIR'])
         node.vm.provision "file",
           source:       "#{ENV['BIN_DIR']}",
-          destination:  "/tmp/opt/bin"
+          destination:  "/var/tmp/opt/bin"
       end
 
       # Copy the yakity script and certificate authority cert/key pair
-      # to the /tmp folder on the VM.
+      # to the /var/tmp folder on the VM.
       copy_file_to_dir(node, '../yakity.sh')
       copy_file_to_dir(node, 'yakity.service')
       copy_file_to_dir(node, 'tail-log.sh')
@@ -337,30 +347,30 @@ Vagrant.configure("2") do |config|
         s.inline = <<-SHELL
           # Move the yakity script into /var/lib/yakity
           # and ensure it is executable.
-          mv /tmp/yakity.sh /var/lib/yakity
+          mv /var/tmp/yakity.sh /var/lib/yakity
           chown root:root /var/lib/yakity/yakity.sh
           chmod 0755 /var/lib/yakity/yakity.sh
 
           # Move the tail-log script into /var/lib/yakity
           # and ensure it is executable.
-          mv /tmp/tail-log.sh /var/lib/yakity
+          mv /var/tmp/tail-log.sh /var/lib/yakity
           chown root:root /var/lib/yakity/tail-log.sh
           chmod 0755 /var/lib/yakity/tail-log.sh
 
           # Move the yakity service into /var/lib/yakity.
-          mv /tmp/yakity.service /var/lib/yakity
+          mv /var/tmp/yakity.service /var/lib/yakity
           chown root:root /var/lib/yakity/yakity.service
 
           # Move the certificate authority cert/key pair
           # into /etc/ssl and set the file permissions.
-          mv /tmp/ca.crt /tmp/ca.key /etc/ssl/
+          mv /var/tmp/ca.crt /var/tmp/ca.key /etc/ssl/
           chown root:root /etc/ssl/ca.crt /etc/ssl/ca.key
           chmod 0644 /etc/ssl/ca.crt; chmod 0400 /etc/ssl/ca.key
 
-          # If /tmp/opt/bin exists then move everything in it
+          # If /var/tmp/opt/bin exists then move everything in it
           # to /opt/bin and mark all the contents as executable.
-          if [ -e /tmp/opt/bin ]; then
-            mv /tmp/opt/bin/* /opt/bin
+          if [ -e /var/tmp/opt/bin ]; then
+            mv /var/tmp/opt/bin/* /opt/bin
             chown -R root:root /opt/bin
             chmod -R 0755 /opt/bin
           fi

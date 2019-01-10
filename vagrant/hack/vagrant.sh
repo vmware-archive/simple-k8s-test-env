@@ -26,21 +26,25 @@ _0d="$(dirname "${0}")"
 # shellcheck disable=SC1090
 . "$(dirname "${0}")/common.sh"
 
+box_out() {
+  { [ "${box}" = "vmware/photon" ] && tail -n +3 | cat; } || cat
+}
+
 get_system_pods() {
   vagrant ssh --no-tty c01 \
-    -c "kubectl -n kube-system get pods" 2>/dev/null
+    -c "kubectl -n kube-system get pods" 2>/dev/null | box_out
 }
 
 get_cluster_status() {
-  vagrant ssh --no-tty c01 -c "kubectl get all"
+  vagrant ssh --no-tty c01 -c "kubectl get all" | box_out
 }
 
 get_component_status() {
-  vagrant ssh --no-tty c01 -c "kubectl get cs"
+  vagrant ssh --no-tty c01 -c "kubectl get cs" | box_out
 }
 
 get_nodes() {
-  vagrant ssh --no-tty c01 -c "kubectl get nodes"
+  vagrant ssh --no-tty c01 -c "kubectl get nodes" | box_out
 }
 
 kube_dns_running() {
@@ -57,7 +61,7 @@ wait_until_cluster_is_online() {
 }
 
 tail_log() {
-  vagrant ssh --no-tty c01 -c 'sudo /var/lib/yakity/tail-log.sh' || \
+  vagrant ssh --no-tty c01 -c 'sudo /var/lib/yakity/tail-log.sh' | box_out || \
     fatal "failed to follow cluster deployment progress"
 }
 
