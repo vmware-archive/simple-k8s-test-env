@@ -1,14 +1,14 @@
 
     <ProductSection>
       <Info>Information about the installed software</Info>
-      <Product>yakity</Product>
+      <Product>Simple Kubernetes Test Environment</Product>
       <Vendor>VMware Inc.</Vendor>
-      <ProductUrl>https://github.com/akutz/yakity</ProductUrl>
+      <ProductUrl>https://github.com/vmware/simple-k8s-test-env</ProductUrl>
       <VendorUrl>https://vmware.com</VendorUrl>
       <Category>Kubernetes</Category>
       <Property ovf:qualifiers="MinLen(1)" ovf:userConfigurable="true" ovf:value="release/stable" ovf:type="string" ovf:key="K8S_VERSION">
         <Label>Version</Label>
-        <Description>The Kubernetes version to install. Please see https://github.com/akutz/yakity/wiki/Kubernetes-version for valid version strings.</Description>
+        <Description>The Kubernetes version to install. Please see https://github.com/vmware/simple-k8s-test-env/wiki/Kubernetes-version for valid version strings.</Description>
       </Property>
       <Property ovf:userConfigurable="false" ovf:value="True" ovf:type="boolean" ovf:key="BOOTSTRAP_CLUSTER"></Property>
       <Property ovf:userConfigurable="false" ovf:value="both" ovf:type="string" ovf:key="NODE_TYPE"></Property>

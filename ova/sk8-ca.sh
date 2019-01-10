@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Yakity
+# simple-kubernetes-test-environment
 #
 # Copyright (c) 2018 VMware, Inc. All Rights Reserved.
 #
@@ -16,13 +16,13 @@
 # verified by https://www.shellcheck.net
 
 #
-# Used by the yakity service to generate a self-signed CA if one does not
+# Used by the sk8 service to generate a self-signed CA if one does not
 # exist or is not set in TLS_CA_PEM.
 #
 
-# Load the yakity commons library.
+# Load the sk8 commons library.
 # shellcheck disable=SC1090
-. "$(pwd)/yakity-common.sh"
+. "$(pwd)/sk8-common.sh"
 
 _done_file="$(pwd)/.$(basename "${0}").done"
 [ ! -f "${_done_file}" ] || exit 0

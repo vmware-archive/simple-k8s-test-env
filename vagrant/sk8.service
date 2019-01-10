@@ -1,11 +1,11 @@
 [Unit]
-Description=yakity.service
+Description=sk8.service
 
 After=  network.target network-online.target \
         syslog.target rc-local.service \
         cloud-final.service
 
-ConditionPathExists=!/var/lib/yakity/.yakity.service.done
+ConditionPathExists=!/var/lib/sk8/.sk8.service.done
 
 [Install]
 WantedBy=multi-user.target
@@ -14,23 +14,23 @@ WantedBy=multi-user.target
 Type=oneshot
 RemainAfterExit=yes
 TimeoutSec=0
-WorkingDirectory=/var/lib/yakity
+WorkingDirectory=/var/lib/sk8
 
-# Create the yakity log directory.
-ExecStartPre=/bin/mkdir -p /var/log/yakity
+# Create the sk8 log directory.
+ExecStartPre=/bin/mkdir -p /var/log/sk8
 
-# The yakity script is responsible for turning up the Kubernetes cluster.
-ExecStart=/bin/bash -c '/bin/bash /var/lib/yakity/yakity.sh 2>&1 | tee /var/log/yakity/yakity.log'
+# The sk8 script is responsible for turning up the Kubernetes cluster.
+ExecStart=/bin/bash -c '/bin/bash /var/lib/sk8/sk8.sh 2>&1 | tee /var/log/sk8/sk8.log'
 
 # This command ensures that this service is not run on subsequent boots.
-ExecStartPost=/bin/touch /var/lib/yakity/.yakity.service.done
+ExecStartPost=/bin/touch /var/lib/sk8/.sk8.service.done
 
 # Add the vagrant user to the k8s-admin group.
 ExecStartPost=/bin/bash -c 'usermod -aG k8s-admin vagrant || true'
 
-# Finally, this command moves the yakity configuration file to the
+# Finally, this command moves the sk8 configuration file to the
 # /tmp directory so the file is cleaned up automatically the next time
 # the temp space is reclaimed. This ensures the configuration file is
 # still available for debugging errors, but *will* get cleaned up 
 # eventually.
-ExecStartPost=/bin/mv -f /etc/default/yakity /tmp/yakity.defaults
+ExecStartPost=/bin/mv -f /etc/default/sk8 /tmp/sk8.defaults

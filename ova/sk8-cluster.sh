@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Yakity
+# simple-kubernetes-test-environment
 #
 # Copyright (c) 2018 VMware, Inc. All Rights Reserved.
 #
@@ -16,7 +16,7 @@
 # verified by https://www.shellcheck.net
 
 #
-# Used by the yakity service to do one of two things:
+# Used by the sk8 service to do one of two things:
 #
 #   1. Clone the primary node into the number of requested cluster nodes
 #   2. Sysprep a cloned node
@@ -30,9 +30,9 @@
 # them the power signal.
 #
 
-# Load the yakity commons library.
+# Load the sk8 commons library.
 # shellcheck disable=SC1090
-. "$(pwd)/yakity-common.sh"
+. "$(pwd)/sk8-common.sh"
 
 get_vm_uuid() {
   govc vm.info -vm.ipath "${1}" -json | jq -r '.VirtualMachines[0].Config.Uuid'
@@ -54,8 +54,8 @@ set_guestinfo() {
   _val="${3}"
   govc vm.change \
     -vm.uuid "${_vm_uuid}" \
-    -e "guestinfo.yakity.${_key}=${_val}" || \
-    fatal "failed to set guestinfo.yakity.${_key} on ${_vm_uuid}"
+    -e "guestinfo.sk8.${_key}=${_val}" || \
+    fatal "failed to set guestinfo.sk8.${_key} on ${_vm_uuid}"
 }
 
 
@@ -134,7 +134,7 @@ EOF
     if _val="$(rpc_get "${_key}")" && [ -n "${_val}" ]; then
       set_guestinfo "${_clone_uuid}" "${_key}" "${_val}"
     fi
-  done <yakity-config-keys.env
+  done <sk8-config-keys.env
 }
 
 set_annotation() {

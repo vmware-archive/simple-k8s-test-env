@@ -1,4 +1,4 @@
-# Yakity
+# simple-kubernetes-test-environment
 #
 # Copyright (c) 2018 VMware, Inc. All Rights Reserved.
 #
@@ -21,7 +21,7 @@ SVGS:=$(patsubst %.puml,%.svg,$(PUML))
 build: $(SVGS)
 
 upload: $(SVGS)
-	aws s3 cp . s3://cnx.vmware/cicd/yakity/svg/ \
+	aws s3 cp . s3://cnx.vmware/cicd/sk8/svg/ \
 	  --recursive --exclude "*" \
 	  $(foreach f,$(SVGS),--include "$(f)") \
 	  --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers

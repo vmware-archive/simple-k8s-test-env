@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Yakity
+# simple-kubernetes-test-environment
 #
 # Copyright (c) 2018 VMware, Inc. All Rights Reserved.
 #
@@ -16,12 +16,12 @@
 # verified by https://www.shellcheck.net
 
 #
-# Used by the yakity service to update the yakity resources.
+# Used by the sk8 service to update the sk8 resources.
 #
 
-# Load the yakity commons library.
+# Load the sk8 commons library.
 # shellcheck disable=SC1090
-. "$(pwd)/yakity-common.sh"
+. "$(pwd)/sk8-common.sh"
 
 _done_file="$(pwd)/.$(basename "${0}").done"
 [ ! -f "${_done_file}" ] || exit 0
@@ -35,12 +35,12 @@ update() {
   echo "updated ${2} from ${url}"
 }
 
-# Update the program that writes the yakity config from the vSphere GuestInfo.
-update YAKITY_GUESTINFO_URL /var/lib/yakity/yakity-guestinfo.sh || \
-  fatal "failed to update yakity-guestinfo.sh"
+# Update the program that writes the sk8 config from the vSphere GuestInfo.
+update SK8_GUESTINFO_URL /var/lib/sk8/sk8-guestinfo.sh || \
+  fatal "failed to update sk8-guestinfo.sh"
 
-# Update the main yakity program.
-update YAKITY_URL /var/lib/yakity/yakity.sh || \
-  fatal "failed to update yakity.sh"
+# Update the main sk8 program.
+update SK8_URL /var/lib/sk8/sk8.sh || \
+  fatal "failed to update sk8.sh"
 
 exit 0

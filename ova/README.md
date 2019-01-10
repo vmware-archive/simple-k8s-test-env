@@ -1,12 +1,12 @@
-# The yakity OVA
-Yakity can be deployed many ways, but perhaps the simplest is onto a
+# The sk8 OVA
+Sk8 can be deployed many ways, but perhaps the simplest is onto a
 vSphere platform using an OVA. This directory contains the bits
-necessary to build the yakity OVA.
+necessary to build the sk8 OVA.
 
 ## Supported Linux Distributions
-The yakity OVA comes in a variety of flavors:
-* PhotonOS 2 ([OVA](https://s3-us-west-2.amazonaws.com/cnx.vmware/cicd/yakity-photon.ova))
-* CentOS 7 ([OVA](https://s3-us-west-2.amazonaws.com/cnx.vmware/cicd/yakity-centos.ova))
+The sk8 OVA comes in a variety of flavors:
+* PhotonOS 2 ([OVA](https://s3-us-west-2.amazonaws.com/cnx.vmware/cicd/sk8-photon.ova))
+* CentOS 7 ([OVA](https://s3-us-west-2.amazonaws.com/cnx.vmware/cicd/sk8-centos.ova))
 
 ## Building the OVA
 The OVA is built using a staging VM that lives on a vSphere platform.
@@ -67,7 +67,7 @@ $ make prep
 
 ## Building the OVA
 The first step to building the OVA is sealing the staging VM and then
-exporting it to an OVF. Export the OVF as `yakity-centos` or `yakity-photon`
+exporting it to an OVF. Export the OVF as `sk8-centos` or `sk8-photon`
 and then use the following command to build the OVA:
 
 ```shell
@@ -78,7 +78,7 @@ If the command fails it may be necessary to run it with the following
 environment variables:
 
 ```shell
-$ YAKITY_CENTOS_VMDK=PATH_TO_OVF_VMDK \
-  YAKITY_CENTOS_NVRAM=PATH_TO_OVF_NVRAM \
+$ SK8_CENTOS_VMDK=PATH_TO_OVF_VMDK \
+  SK8_CENTOS_NVRAM=PATH_TO_OVF_NVRAM \
   make build
 ```

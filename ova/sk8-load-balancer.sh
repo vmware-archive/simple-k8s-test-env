@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Yakity
+# simple-kubernetes-test-environment
 #
 # Copyright (c) 2018 VMware, Inc. All Rights Reserved.
 #
@@ -21,9 +21,9 @@
 # to the privately routed cluster.
 #
 
-# Load the yakity commons library.
+# Load the sk8 commons library.
 # shellcheck disable=SC1090
-. "$(pwd)/yakity-common.sh"
+. "$(pwd)/sk8-common.sh"
 
 _done_file="$(pwd)/.$(basename "${0}").done"
 [ ! -f "${_done_file}" ] || exit 0
@@ -96,7 +96,7 @@ create_load_balancer() {
   # See https://docs.aws.amazon.com/cli/latest/reference/elbv2/create-load-balancer.html
   # for example output from this command.
   aws elbv2 create-load-balancer \
-    --name "yakity-${cluster_id7}" \
+    --name "sk8-${cluster_id7}" \
     --scheme internet-facing \
     --type network \
     --ip-address-type ipv4 \
@@ -139,7 +139,7 @@ connect_load_balancer() {
   # for example output from this command.
   tg_http_json="$(mktemp)"
   aws elbv2 create-target-group \
-    --name "yakity-${cluster_id7}-http" \
+    --name "sk8-${cluster_id7}-http" \
     --target-type ip \
     --protocol TCP \
     --port 80 \
@@ -157,7 +157,7 @@ connect_load_balancer() {
 
   tg_https_json="$(mktemp)"
   aws elbv2 create-target-group \
-    --name "yakity-${cluster_id7}-https" \
+    --name "sk8-${cluster_id7}-https" \
     --target-type ip \
     --protocol TCP \
     --port 443 \

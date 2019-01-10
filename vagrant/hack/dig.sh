@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Yakity
+# simple-kubernetes-test-environment
 #
 # Copyright (c) 2018 VMware, Inc. All Rights Reserved.
 #
@@ -26,10 +26,10 @@ export PROGRAM="dig"
 . "$(dirname "${0}")/common.sh"
 
 #dns_port="$(cat "${DNSCONFIG}")"
-#exec dig +domain=yakity -4 +tcp @127.0.0.1 -p "${dns_port}" "${@}"
+#exec dig +domain=sk8 -4 +tcp @127.0.0.1 -p "${dns_port}" "${@}"
 
 for a in "${@}"; do
   { [ -z "${args}" ] && args="'${a}'"; } || args="${args} '${a}'"
 done
 
-exec vagrant ssh --no-tty c01 -c "dig +domain=yakity -4 +tcp @127.0.0.1 ${args}"
+exec vagrant ssh --no-tty c01 -c "dig +domain=sk8 -4 +tcp @127.0.0.1 ${args}"

@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Yakity
+# simple-kubernetes-test-environment
 #
 # Copyright (c) 2018 VMware, Inc. All Rights Reserved.
 #
@@ -22,12 +22,12 @@ script_dir=$(python -c "import os; print(os.path.realpath('$(dirname "${0}")'))"
 case "${LINUX_DISTRO}" in
 photon)
   seal_script="${script_dir}/photon/photon-seal.sh"
-  export GOVC_VM=${GOVC_VM:-/SDDC-Datacenter/vm/Workloads/yakity-photon}
+  export GOVC_VM=${GOVC_VM:-/SDDC-Datacenter/vm/Workloads/sk8-photon}
   SNAPSHOT_NAME=${SNAPSHOT_NAME:-bin}
   ;;
 centos)
   seal_script="${script_dir}/centos/centos-seal.sh"
-  export GOVC_VM=${GOVC_VM:-/SDDC-Datacenter/vm/Workloads/yakity-centos}
+  export GOVC_VM=${GOVC_VM:-/SDDC-Datacenter/vm/Workloads/sk8-centos}
   SNAPSHOT_NAME=${SNAPSHOT_NAME:-bin}
   ;;
 *)
@@ -50,32 +50,32 @@ fi
 
 govc vm.change -annotation " "
 govc vm.change \
-  -e "guestinfo.yakity.EXTERNAL_FQDN=null" \
-  -e "guestinfo.yakity.VSPHERE_SERVER=${VSPHERE_SERVER}" \
-  -e "guestinfo.yakity.VSPHERE_SERVER_PORT=${VSPHERE_SERVER_PORT:-443}" \
-  -e "guestinfo.yakity.VSPHERE_SERVER_INSECURE=${VSPHERE_SERVER_INSECURE:-false}" \
-  -e "guestinfo.yakity.VSPHERE_USER=${VSPHERE_USER}" \
-  -e "guestinfo.yakity.VSPHERE_PASSWORD=${VSPHERE_PASSWORD}" \
-  -e "guestinfo.yakity.BOOTSTRAP_CLUSTER=${BOOTSTRAP_CLUSTER:-false}" \
-  -e "guestinfo.yakity.SYSPREP=${SYSPREP:-false}" \
-  -e "guestinfo.yakity.CLOUD_PROVIDER_TYPE=${CLOUD_PROVIDER_TYPE:-External}" \
-  -e "guestinfo.yakity.CLOUD_PROVIDER_IMAGE=${CLOUD_PROVIDER_IMAGE:-'gcr.io/cloud-provider-vsphere/vsphere-cloud-controller-manager:latest'}" \
-  -e "guestinfo.yakity.INSTALL_CONFORMANCE_TESTS=${INSTALL_CONFORMANCE_TESTS:-false}" \
-  -e "guestinfo.yakity.LOG_LEVEL_KUBERNETES=${LOG_LEVEL_KUBERNETES:-2}" \
-  -e "guestinfo.yakity.HOST_FQDN=${HOST_FQDN:-${LINUX_DISTRO}.yakity}" \
-  -e "guestinfo.yakity.NODE_TYPE=${NODE_TYPE:-controller}" \
-  -e "guestinfo.yakity.NUM_NODES=${NUM_NODES:-1}" \
-  -e "guestinfo.yakity.NUM_CONTROLLERS=${NUM_CONTROLLERS:-1}" \
-  -e "guestinfo.yakity.NUM_BOTH=${NUM_BOTH:-0}" \
-  -e "guestinfo.yakity.CREATE_LOAD_BALANCER=${CREATE_LOAD_BALANCER:-false}" \
-  -e "guestinfo.yakity.AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" \
-  -e "guestinfo.yakity.AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}" \
-  -e "guestinfo.yakity.AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}" \
-  -e "guestinfo.yakity.K8S_VERSION=${K8S_VERSION:-release/stable}" \
-  -e "guestinfo.yakity.CLONE_NUM_CPUS_CONTROLLERS=${CLONE_NUM_CPUS_CONTROLLERS:-2}" \
-  -e "guestinfo.yakity.CLONE_MEM_GB_CONTROLLERS=${CLONE_MEM_GB_CONTROLLERS:-8}" \
-  -e "guestinfo.yakity.CLONE_NUM_CPUS_WORKERS=${CLONE_NUM_CPUS_WORKERS:-8}" \
-  -e "guestinfo.yakity.CLONE_MEM_GB_WORKERS=${CLONE_MEM_GB_WORKERS:-16}"
+  -e "guestinfo.sk8.EXTERNAL_FQDN=null" \
+  -e "guestinfo.sk8.VSPHERE_SERVER=${VSPHERE_SERVER}" \
+  -e "guestinfo.sk8.VSPHERE_SERVER_PORT=${VSPHERE_SERVER_PORT:-443}" \
+  -e "guestinfo.sk8.VSPHERE_SERVER_INSECURE=${VSPHERE_SERVER_INSECURE:-false}" \
+  -e "guestinfo.sk8.VSPHERE_USER=${VSPHERE_USER}" \
+  -e "guestinfo.sk8.VSPHERE_PASSWORD=${VSPHERE_PASSWORD}" \
+  -e "guestinfo.sk8.BOOTSTRAP_CLUSTER=${BOOTSTRAP_CLUSTER:-false}" \
+  -e "guestinfo.sk8.SYSPREP=${SYSPREP:-false}" \
+  -e "guestinfo.sk8.CLOUD_PROVIDER_TYPE=${CLOUD_PROVIDER_TYPE:-External}" \
+  -e "guestinfo.sk8.CLOUD_PROVIDER_IMAGE=${CLOUD_PROVIDER_IMAGE:-'gcr.io/cloud-provider-vsphere/vsphere-cloud-controller-manager:latest'}" \
+  -e "guestinfo.sk8.INSTALL_CONFORMANCE_TESTS=${INSTALL_CONFORMANCE_TESTS:-false}" \
+  -e "guestinfo.sk8.LOG_LEVEL_KUBERNETES=${LOG_LEVEL_KUBERNETES:-2}" \
+  -e "guestinfo.sk8.HOST_FQDN=${HOST_FQDN:-${LINUX_DISTRO}.sk8}" \
+  -e "guestinfo.sk8.NODE_TYPE=${NODE_TYPE:-controller}" \
+  -e "guestinfo.sk8.NUM_NODES=${NUM_NODES:-1}" \
+  -e "guestinfo.sk8.NUM_CONTROLLERS=${NUM_CONTROLLERS:-1}" \
+  -e "guestinfo.sk8.NUM_BOTH=${NUM_BOTH:-0}" \
+  -e "guestinfo.sk8.CREATE_LOAD_BALANCER=${CREATE_LOAD_BALANCER:-false}" \
+  -e "guestinfo.sk8.AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" \
+  -e "guestinfo.sk8.AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}" \
+  -e "guestinfo.sk8.AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}" \
+  -e "guestinfo.sk8.K8S_VERSION=${K8S_VERSION:-release/stable}" \
+  -e "guestinfo.sk8.CLONE_NUM_CPUS_CONTROLLERS=${CLONE_NUM_CPUS_CONTROLLERS:-2}" \
+  -e "guestinfo.sk8.CLONE_MEM_GB_CONTROLLERS=${CLONE_MEM_GB_CONTROLLERS:-8}" \
+  -e "guestinfo.sk8.CLONE_NUM_CPUS_WORKERS=${CLONE_NUM_CPUS_WORKERS:-8}" \
+  -e "guestinfo.sk8.CLONE_MEM_GB_WORKERS=${CLONE_MEM_GB_WORKERS:-16}"
 
 # Power on the VM
 echo "powering on the VM..."
@@ -116,7 +116,7 @@ ssh_do() {
 }
 
 # Use SSH and SCP to configure the host.
-ssh_do mkdir -p /var/lib/yakity /opt/bin
+ssh_do mkdir -p /var/lib/sk8 /opt/bin
 
 # Check to see if the govc program needs to be updated.
 lcl_govc="${script_dir}/"../govc-linux-amd64
@@ -150,24 +150,24 @@ else
   ssh_do chmod 0755 /opt/bin/rpctool
 fi
 
-scp_to /var/lib/yakity/ \
-  "${script_dir}/../../yakity.sh" \
-  "${script_dir}/../yakity.service" \
-  "${script_dir}/../yakity-config-keys.env" \
+scp_to /var/lib/sk8/ \
+  "${script_dir}/../../sk8.sh" \
+  "${script_dir}/../sk8.service" \
+  "${script_dir}/../sk8-config-keys.env" \
   "${script_dir}/../"*.sh \
   "${script_dir}/../../hack/new-ca.sh" \
   "${script_dir}/../../hack/new-cert.sh" \
   "${script_dir}/../../hack/new-kubeconfig.sh" \
   "${script_dir}/../kube-update/kube-update.sh" \
   "${script_dir}/../kube-update/kube-update.service"
-scp_to /var/lib/yakity/yakity-sysprep.sh \
+scp_to /var/lib/sk8/sk8-sysprep.sh \
   "${script_dir}/../sysprep/sysprep-${LINUX_DISTRO}.sh"
-ssh_do 'chmod 0755 /var/lib/yakity/*.sh'
-ssh_do systemctl -l enable /var/lib/yakity/yakity.service \
-                           /var/lib/yakity/kube-update.service
+ssh_do 'chmod 0755 /var/lib/sk8/*.sh'
+ssh_do systemctl -l enable /var/lib/sk8/sk8.service \
+                           /var/lib/sk8/kube-update.service
 
-# Echo the version of yakity into the VM.
-ssh_do 'echo "'"$(git describe --dirty)"'" >/var/lib/yakity/version'
+# Echo the version of sk8 into the VM.
+ssh_do 'echo "'"$(git describe --dirty)"'" >/var/lib/sk8/version'
 
 if [ "${1}" = "seal" ]; then
   if [ -f "${seal_script}" ]; then
@@ -179,7 +179,7 @@ if [ "${1}" = "seal" ]; then
   exit 0
 fi
 
-ssh_do systemctl -l --no-block start kube-update yakity
+ssh_do systemctl -l --no-block start kube-update sk8
 ssh_do 'rm -f /root/.bash_history && history -c'
 
 SSH_CMD="ssh -o ProxyCommand='ssh -W ${VM_IP}:22 $(whoami)@50.112.88.129' root@${VM_IP}"

@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Yakity
+# simple-kubernetes-test-environment
 #
 # Copyright (c) 2018 VMware, Inc. All Rights Reserved.
 #
@@ -16,12 +16,12 @@
 # verified by https://www.shellcheck.net
 
 #
-# Used by the yakity service to update the host's name.
+# Used by the sk8 service to update the host's name.
 #
 
-# Load the yakity commons library.
+# Load the sk8 commons library.
 # shellcheck disable=SC1090
-. "$(pwd)/yakity-common.sh"
+. "$(pwd)/sk8-common.sh"
 
 # If this is the first node in the cluster the host FQDN must be
 # figured out based on the cluster's shape.
@@ -40,7 +40,7 @@ if is_true "$(rpc_get BOOTSTRAP_CLUSTER)"; then
 
   # The domain name is generated using the first seven characters from the
   # cluster ID.
-  domain_name="${cluster_id7}.yakity"
+  domain_name="${cluster_id7}.sk8"
   rpc_set NETWORK_DOMAIN "${domain_name}"
   info "cluster-domain=${domain_name}"
 

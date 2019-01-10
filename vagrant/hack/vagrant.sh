@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Yakity
+# simple-kubernetes-test-environment
 #
 # Copyright (c) 2018 VMware, Inc. All Rights Reserved.
 #
@@ -61,14 +61,14 @@ wait_until_cluster_is_online() {
 }
 
 tail_log() {
-  vagrant ssh --no-tty c01 -c 'sudo /var/lib/yakity/tail-log.sh' | box_out || \
+  vagrant ssh --no-tty c01 -c 'sudo /var/lib/sk8/tail-log.sh' | box_out || \
     fatal "failed to follow cluster deployment progress"
 }
 
 vagrant_up_slowly() {
   { vagrant up --provision-with init-guest && \
-    vagrant provision --provision-with file,init-yakity && \
-    vagrant provision --provision-with start-yakity; } || \
+    vagrant provision --provision-with file,init-sk8 && \
+    vagrant provision --provision-with start-sk8; } || \
     fatal "vagrant up failed"
 }
 
