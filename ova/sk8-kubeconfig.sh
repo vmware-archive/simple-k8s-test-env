@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Yakity
+# simple-kubernetes-test-environment
 #
 # Copyright (c) 2018 VMware, Inc. All Rights Reserved.
 #
@@ -16,15 +16,15 @@
 # verified by https://www.shellcheck.net
 
 #
-# Used by the yakity service to create and place an admin kubeconfig
-# into the guestinfo property "yakity.kubeconfig". The kubeconfig will
+# Used by the sk8 service to create and place an admin kubeconfig
+# into the guestinfo property "sk8.kubeconfig". The kubeconfig will
 # use the external FQDN of the cluster if set, otherwise the kubeconfig
 # will list all of the control plane nodes.
 #
 
-# Load the yakity commons library.
+# Load the sk8 commons library.
 # shellcheck disable=SC1090
-. "$(pwd)/yakity-common.sh"
+. "$(pwd)/sk8-common.sh"
 
 _done_file="$(pwd)/.$(basename "${0}").done"
 [ ! -f "${_done_file}" ] || exit 0
@@ -86,7 +86,7 @@ SERVER="https://${api_fqdn}:${secure_port}" \
   USER="admin" \
   ./new-kubeconfig.sh
 
-# Store the kubeconfig in guestinfo.yakity.KUBECONFIG.
+# Store the kubeconfig in guestinfo.sk8.KUBECONFIG.
 rpc_set KUBECONFIG - <"${KUBECONFIG}"
 
 exit 0

@@ -1,0 +1,89 @@
+# simple-kubernetes-test-environment
+#
+# Copyright (c) 2018 VMware, Inc. All Rights Reserved.
+#
+# This product is licensed to you under the Apache 2.0 license (the "License").
+# You may not use this product except in compliance with the Apache 2.0 License.
+#
+# This product may include a number of subcomponents with separate copyright
+# notices and license terms. Your use of these subcomponents is subject to the
+# terms and conditions of the subcomponent's license, as noted in the LICENSE
+# file.
+
+[Unit]
+Description=sk8.service
+
+After=  network.target network-online.target \
+        syslog.target rc-local.service \
+        cloud-final.service
+
+ConditionPathExists=!/var/lib/sk8/.sk8.service.done
+
+[Install]
+WantedBy=multi-user.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutSec=0
+WorkingDirectory=/var/lib/sk8
+
+# Create the sk8 log directory.
+ExecStartPre=/bin/mkdir -p /var/log/sk8
+
+# Sysprep the host if necessary.
+ExecStartPre=/bin/sh -c '/var/lib/sk8/sk8-sysprep.sh 2>&1 | tee /var/log/sk8/sysprep.log'
+
+# Update the host name with the value from the OVF environment.
+ExecStartPre=/bin/sh -c '/var/lib/sk8/sk8-hostname.sh 2>&1 | tee /var/log/sk8/hostname.log'
+
+# This command ensures the sk8 service will wait until the network
+# is truly online before continuing with any of the subsequent 
+# ExecStartPre commands or the ExecStart command.
+ExecStartPre=/bin/sh -c "while true; do ping -c1 google.com >/dev/null && break; done"
+
+# Create a load balancer if configured to do so.
+ExecStartPre=/bin/sh -c '/var/lib/sk8/sk8-load-balancer.sh create 2>&1 | tee /var/log/sk8/load-balancer.log'
+
+# Get information about the vSphere platform and select the cloud provider.
+ExecStartPre=/bin/sh -c '/var/lib/sk8/sk8-vsphere.sh 2>&1 | tee /var/log/sk8/vsphere.log'
+
+# Generate a self-signed CA if one is unavailable.
+ExecStartPre=/bin/sh -c '/var/lib/sk8/sk8-ca.sh generate 2>&1 | tee /var/log/sk8/ca.log'
+
+# Generate an SSH key pair if one is not available.
+ExecStartPre=/bin/sh -c '/var/lib/sk8/sk8-ssh.sh 2>&1 | tee /var/log/sk8/ssh.log'
+
+# This command generates a kubeconfig that can be used to access the cluster
+# (if EXTERNAL_FQDN is set) or the control plane nodes. The kubeconfig file
+# is assigned to the guestinfo property "sk8.kubeconfig".
+ExecStartPre=/bin/sh -c '/var/lib/sk8/sk8-kubeconfig.sh 2>&1 | tee /var/log/sk8/kubeconfig.log'
+
+# Create the cluster.
+ExecStartPre=/bin/sh -c '/var/lib/sk8/sk8-cluster.sh 2>&1 | tee /var/log/sk8/cluster.log'
+
+# This command checks to see if there were custom/updated versions of the
+# sk8-guestinfo and sk8 scripts specified in the OVF data. If there
+# were then this command will download the new versions and replace the
+# ones on disk prior to the commands being executed.
+ExecStartPre=/bin/sh -c '/var/lib/sk8/sk8-update.sh 2>&1 | tee /var/log/sk8/update.log'
+
+# This program reads the OVF environment for sk8 configuration data
+# and writes the sk8 configuration file to /etc/default/sk8.
+ExecStartPre=/bin/sh -c '/var/lib/sk8/sk8-guestinfo.sh 2>&1 | tee /var/log/sk8/guestinfo.log'
+
+# The sk8 script is responsible for turning up the Kubernetes cluster.
+ExecStart=/bin/sh -c '/var/lib/sk8/sk8.sh 2>&1 | tee /var/log/sk8/sk8.log'
+
+# Update the load balancer if configured to do so.
+ExecStartPost=/bin/sh -c '/var/lib/sk8/sk8-load-balancer.sh connect 2>&1 | tee -a /var/log/sk8/load-balancer.log'
+
+# This command ensures that this service is not run on subsequent boots.
+ExecStartPost=/bin/touch /var/lib/sk8/.sk8.service.done
+
+# Finally, this command moves the sk8 configuration file to the
+# /tmp directory so the file is cleaned up automatically the next time
+# the temp space is reclaimed. This ensures the configuration file is
+# still available for debugging errors, but *will* get cleaned up 
+# eventually.
+ExecStartPost=/bin/mv -f /etc/default/sk8 /tmp/sk8.defaults

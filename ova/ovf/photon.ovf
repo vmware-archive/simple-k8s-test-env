@@ -1,6 +1,6 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <!--
-Yakity
+simple-kubernetes-test-environment
 
 Copyright (c) 2018 VMware, Inc. All Rights Reserved.
 
@@ -14,7 +14,7 @@ file.
 -->
 <Envelope xmlns="http://schemas.dmtf.org/ovf/envelope/1" xmlns:ovf="http://schemas.dmtf.org/ovf/envelope/1" xmlns:vmw="http://www.vmware.com/schema/ovf" xmlns:rasd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData" xmlns:vssd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_VirtualSystemSettingData">
   <References>
-    <File ovf:id="file1" ovf:href="yakity-photon-1.vmdk"/>
+    <File ovf:id="file1" ovf:href="sk8-photon-1.vmdk"/>
   </References>
   <DiskSection>
     <Info>List of the virtual disks</Info>
@@ -33,9 +33,9 @@ file.
   <vmw:IpAssignmentSection vmw:schemes="dhcp ovfenv" vmw:protocols="IPv4">
     <Info>Supported IP assignment schemes</Info>
   </vmw:IpAssignmentSection>
-  <VirtualSystem ovf:id="yakity-photon">
+  <VirtualSystem ovf:id="sk8-photon">
     <Info>A Virtual system</Info>
-    <Name>yakity-photon</Name>
+    <Name>sk8-photon</Name>
     <AnnotationSection>
       <Info>A human-readable annotation</Info>
       <Annotation>A turn-key solution for deploying single or multi-node Kubernetes clusters.</Annotation>

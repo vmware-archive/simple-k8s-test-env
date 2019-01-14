@@ -1,20 +1,20 @@
-# Provision Kubernetes on VMC with the yakity OVA
+# Provision Kubernetes on VMC with the sk8 OVA
 This document is a step-by-step guide to provisioning a Kubernetes cluster on
-VMware Cloud (VMC) on AWS using the yakity OVA.
+VMware Cloud (VMC) on AWS using the sk8 OVA.
 
 ## VMC vs vSphere
 The primary benefit to provisioning Kubernetes on VMC on AWS is the ability to
-leverage AWS resources like its Elastic Load Balancer (ELB). The yakity OVA is 
+leverage AWS resources like its Elastic Load Balancer (ELB). The sk8 OVA is 
 capable an ELB to provide public access to a privately routed Kubernetes
 cluster when deployed to VMC.
 
 For more information on provisioning Kubernetes on vSphere that is **not** VMC,
-please see the guide [_Provision Kubernetes on vSphere with the yakity OVA_](provision-on-vsphere-with-ova.md).
+please see the guide [_Provision Kubernetes on vSphere with the sk8 OVA_](provision-on-vsphere-with-ova.md).
 
 ## Guide
 1. Log into the vSphere web client.
 2. Right-click on a resource pool or folder and select _Deploy OVF Template_
-3. A new window will appear asking for the location of the OVF -- either a URL or one or more local files. Enter the value  `https://s3-us-west-2.amazonaws.com/cnx.vmware/cicd/yakity-photon.ova` into the _URL_ field and click _Next_.
+3. A new window will appear asking for the location of the OVF -- either a URL or one or more local files. Enter the value  `https://s3-us-west-2.amazonaws.com/cnx.vmware/cicd/sk8-photon.ova` into the _URL_ field and click _Next_.
 4. A warning may appear regarding an SSL verification. Please click _Okay_ to continue.
 5. Enter a name for the new VM (for example, _kubernetes_), select the folder in which the new VM will be created, and click _Next_.
 6. Select the resource pool in which the new VM will be placed and click _Next_.
@@ -59,7 +59,7 @@ please see the guide [_Provision Kubernetes on vSphere with the yakity OVA_](pro
     Once the jump host values are configured, please execute the access script:
 
     ```shell
-    $ curl -sSL http://bit.ly/yakcess | sh -s -- 4230247a-8346-e622-6897-6466c6a583e3
+    $ curl -sSL http://bit.ly/toepick | sh -s -- 4230247a-8346-e622-6897-6466c6a583e3
     getting cluster information
     * id                          success!
     * members                     success!
@@ -76,7 +76,7 @@ please see the guide [_Provision Kubernetes on vSphere with the yakity OVA_](pro
     * kubectl                     success!
     * turn-down                   success!
 
-    cluster access is now enabled at /Users/akutz/.yakity/b4a019c.
+    cluster access is now enabled at /Users/akutz/.sk8/b4a019c.
     several aliases of common programs are available:
 
     * ssh-b4a019c
@@ -86,52 +86,52 @@ please see the guide [_Provision Kubernetes on vSphere with the yakity OVA_](pro
 
     to use the above programs, execute the following:
 
-    export PATH="/Users/akutz/.yakity/b4a019c/bin:${PATH}"
+    export PATH="/Users/akutz/.sk8/b4a019c/bin:${PATH}"
     ```
 
 17. Add the cluster commands to the path:
     ```shell
-    export PATH="/Users/akutz/.yakity/b4a019c/bin:${PATH}"
+    export PATH="/Users/akutz/.sk8/b4a019c/bin:${PATH}"
     ```
 
-18. Clusters deployed with the yakity OVA are composed of nodes with host names that always follow a consistent pattern:
+18. Clusters deployed with the sk8 OVA are composed of nodes with host names that always follow a consistent pattern:
 
     * Members of the control plane have host names `c%02d`
     * Worker nodes have host names `w%02d`
-    * The first member of a cluster deployed with the yakity OVA is always a member of the control plane, even if it is able to also schedule workloads. Therefore the first member of a cluster deployed with the yakity OVA will always have a host name of `c01`.
+    * The first member of a cluster deployed with the sk8 OVA is always a member of the control plane, even if it is able to also schedule workloads. Therefore the first member of a cluster deployed with the sk8 OVA will always have a host name of `c01`.
 
-19. While the host names in a cluster deployed by the yakity OVA are always the  same, the host FQDNs are always unique. This is due to [kubernetes/cloud-provider-vsphere#87](https://github.com/kubernetes/cloud-provider-vsphere/issues/87). The Kubernetes cloud provider expects node names to be unique. Because the vSphere cloud provider for Kubernetes treats the guest's reported host FQDN as the node name, collisions may occur with great frequency when there is more than one Kubernetes cluster on a single vSphere platform. So while host _names_ in an OVA-deployed cluster always follow an identical pattern, host _FQDNs_ always include a unique hash as part of the domain. 
+19. While the host names in a cluster deployed by the sk8 OVA are always the  same, the host FQDNs are always unique. This is due to [kubernetes/cloud-provider-vsphere#87](https://github.com/kubernetes/cloud-provider-vsphere/issues/87). The Kubernetes cloud provider expects node names to be unique. Because the vSphere cloud provider for Kubernetes treats the guest's reported host FQDN as the node name, collisions may occur with great frequency when there is more than one Kubernetes cluster on a single vSphere platform. So while host _names_ in an OVA-deployed cluster always follow an identical pattern, host _FQDNs_ always include a unique hash as part of the domain. 
 
     For example, one cluster may consist of the following three host FQDNs:
 
-    * `c01.b4a019c.yakity`
-    * `c02.b4a019c.yakity`
-    * `w01.b4a019c.yakity`
+    * `c01.b4a019c.sk8`
+    * `c02.b4a019c.sk8`
+    * `w01.b4a019c.sk8`
 
     Whereas another cluster is built on nodes with _these_ FQDNs:
 
-    * `c01.072c882.yakity`
-    * `c02.072c882.yakity`
-    * `w01.072c882.yakity`
+    * `c01.072c882.sk8`
+    * `c02.072c882.sk8`
+    * `w01.072c882.sk8`
 
-    Please note that clusters deployed with the yakity OVA consist of nodes with host names that follow a consistent pattern. All controllers have host names that follow the pattern `c%02d` and all workers follow the pattern `w%02d`. Since the first node in a cluster deployed by the yakity OVA is always a member of the control plane, there will always be a node with the host name `c01`.
+    Please note that clusters deployed with the sk8 OVA consist of nodes with host names that follow a consistent pattern. All controllers have host names that follow the pattern `c%02d` and all workers follow the pattern `w%02d`. Since the first node in a cluster deployed by the sk8 OVA is always a member of the control plane, there will always be a node with the host name `c01`.
 
 20. Verify that all of the cluster's nodes are accessible via SSH:
     ```shell
     $ ssh-b4a019c c01 'hostname -f && exit "${?}"' && \
       ssh-b4a019c c02 'hostname -f && exit "${?}"' && \
       ssh-b4a019c w01 'hostname -f && exit "${?}"'
-      c01.b4a019c.yakity
-      c02.b4a019c.yakity
-      w01.b4a019c.yakity
+      c01.b4a019c.sk8
+      c02.b4a019c.sk8
+      w01.b4a019c.sk8
     ```
 
 21. Since the cluster uses a load balancer it is possible to access it remotely using `kubectl`. Open a terminal on the local system and use `kubectl` to print information about the cluster:
     ```shell
     $ kubectl-b4a019c get nodes
     NAME                 STATUS    ROLES     AGE       VERSION
-    c02.b4a019c.yakity   Ready     <none>    9m26s     v1.12.2
-    w01.b4a019c.yakity   Ready     <none>    9m46s     v1.12.2
+    c02.b4a019c.sk8   Ready     <none>    9m26s     v1.12.2
+    w01.b4a019c.sk8   Ready     <none>    9m46s     v1.12.2
     ```
 
     ```shell
@@ -157,6 +157,6 @@ please see the guide [_Provision Kubernetes on vSphere with the yakity OVA_](pro
     destroying VM controller:4230247a-8346-e622-6897-6466c6a583e3:c01
     destroying VM worker:42309688-0e9e-95f7-3d2e-047e26b2c564:w01
     destroying VM both:4230aef7-18b4-bb80-8a1b-566c270f5a55:c02
-    deleting load balancer arn:aws:elasticloadbalancing:us-west-2:571501312763:loadbalancer/net/yakity-b4a019c/93aebc4749440e2c
+    deleting load balancer arn:aws:elasticloadbalancing:us-west-2:571501312763:loadbalancer/net/sk8-b4a019c/93aebc4749440e2c
     waiting for load balancer to be deleted
     ```

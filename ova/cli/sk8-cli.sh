@@ -5,7 +5,7 @@
 
 #
 # A command-line interface (CLI) client for Kubernetes clusters turned
-# up with the yakity OVA.
+# up with the sk8 OVA.
 #
 
 set -e

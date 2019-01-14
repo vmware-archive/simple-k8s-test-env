@@ -1,40 +1,40 @@
-# yakity
-Yakity (_**Y**et **A**nother **K**ubernetes **I**nstaller 
-**T**hing**Y**_) is:
+# Simple Kubernetes Test Environment
+The Simple Kubernetes Test Enviornment (sk8) project is:
 
   * _For developers building and testing Kubernetes and core Kubernetes components_
-  * Capable of deploying *any* [version](https://github.com/akutz/yakity/wiki/Kubernetes-version) of Kubernetes (+1.10) on generic Linux distributions
+  * Capable of deploying *any* [version](https://github.com/vmware/simple-k8s-test-env/wiki/Kubernetes-version) of Kubernetes (+1.10) on generic Linux distributions
   * Designed to deploy single-node, multi-node, and even multi-control plane node clusters
   * Able to deploy nodes on DHCP networks with support for both node FQDNs and IPv4 addresses
   * A single, POSIX-compliant shell script, making it portable and customizable
 
 ## Quick start
-The quickest way to provision a Kubernetes cluster with Yakity is on vSphere 
+The quickest way to provision a Kubernetes cluster with sk8 is on vSphere 
 using the [OVA](ova/doc/provision-on-vsphere-with-ova.md).
 
 ## Getting started
-  * [How does yakity work?](#how-does-yakity-work)
-  * [What does yakity install?](#what-does-yakity-install)
-  * [How to provision Kubernetes with yakity](#how-to-provision-kubernetes-with-yakity)
+  * [How does sk8 work?](#how-does-sk8-work)
+  * [What does sk8 install?](#what-does-sk8-install)
+  * [How to provision Kubernetes with sk8](#how-to-provision-kubernetes-sk8-sk8)
 
-### How does yakity work?
-Yakity is a single, POSIX-compliant shell script that is designed to work with
-most Linux distributions. This [model](https://s3-us-west-2.amazonaws.com/cnx.vmware/cicd/yakity/svg/install-process.svg)
-illustrates an example yakity execution.
+### How does sk8 work?
+The sk8 project revolves around a single, POSIX-compliant shell script designed
+to be compatible with most Linux distributions. This 
+[model](https://s3-us-west-2.amazonaws.com/cnx.vmware/cicd/sk8/svg/install-process.svg)
+illustrates an example sk8 execution.
 
-### What does yakity install?
-A yakity-provisioned cluster passes the Kubernetes e2e conformance test suite
-because yakity uses a well-known, standard set of components to the control
+### What does sk8 install?
+A sk8-provisioned cluster passes the Kubernetes e2e conformance test suite
+because sk8 uses a well-known, standard set of components to the control
 plane and worker nodes:
 
-![Node components](https://s3-us-west-2.amazonaws.com/cnx.vmware/cicd/yakity/svg/node-components.svg?v2)
+![Node components](https://s3-us-west-2.amazonaws.com/cnx.vmware/cicd/sk8/svg/node-components.svg?v2)
 
-### How to provision Kubernetes with yakity
-There are several ways to provision a Kubernetes cluster with yakity:
+### How to provision Kubernetes with sk8
+There are several ways to provision a Kubernetes cluster with sk8:
 
-  * [Provision a multi-node cluster on vSphere with the yakity OVA](ova/doc/provision-on-vsphere-with-ova.md)
-  * [Provision a multi-node cluster on VMware Cloud (VMC) on AWS with the yakity OVA](ova/doc/provision-on-vmc-with-ova.md)
-  * [Provision single-node and multi-node clusters with yakity and Vagrant](vagrant/)
+  * [Provision a multi-node cluster on vSphere with the sk8 OVA](ova/doc/provision-on-vsphere-with-ova.md)
+  * [Provision a multi-node cluster on VMware Cloud (VMC) on AWS with the sk8 OVA](ova/doc/provision-on-vmc-with-ova.md)
+  * [Provision single-node and multi-node clusters with sk8 and Vagrant](vagrant/)
 
 ## Todo
 * Better testing

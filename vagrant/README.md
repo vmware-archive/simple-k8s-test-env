@@ -1,13 +1,13 @@
-# Provisioning Kubernetes clusters with Vagrant and yakity
-This document illustrates how to provision Kubernetes with yakity
+# Provisioning Kubernetes clusters with Vagrant and sk8
+This document illustrates how to provision Kubernetes with sk8
 on several different Linux distributions using Vagrant.
 
 ## Quick start
 This example illustrates how to provision a Kubernetes cluster with three nodes
 on Photon running on VirtualBox:
 ```shell
-$ git clone https://github.com/akutz/yakity && \
-  yakity/vagrant/hack/vagrant.sh -b photon -3 -- up
+$ git clone https://github.com/vmware/simple-k8s-test-env && \
+  sk8/vagrant/hack/vagrant.sh -b photon -3 -- up
 ```
 
 ## Support matrix
@@ -20,19 +20,19 @@ distributions:
 | VMware Fusion | ✓        | ✓          | ✓                     |
 
 ## Getting started
-Please follow these steps to provision a Kubernetes cluster with Vagrant and yakity:
+Please follow these steps to provision a Kubernetes cluster with Vagrant and sk8:
 
 1. Clone this repository:
     ```shell
-    $ git clone https://github.com/akutz/yakity /tmp/yakity
+    $ git clone https://github.com/vmware/simple-k8s-test-env /tmp/sk8
     ```
 
-2. Open a shell and change directories into `/tmp/yakity/vagrant`
+2. Open a shell and change directories into `/tmp/sk8/vagrant`
     ```shell
-    $ cd /tmp/yakity/vagrant
+    $ cd /tmp/sk8/vagrant
     ```
 
-3. The program `hack/vagrant.sh` makes turning up clusters with Vagrant and yakity even simpler. Type `hack/vagrant.sh -h` to print a full list of the program's capabilities. Use it to deploy a three-node cluster on Photon:
+3. The program `hack/vagrant.sh` makes turning up clusters with Vagrant and sk8 even simpler. Type `hack/vagrant.sh -h` to print a full list of the program's capabilities. Use it to deploy a three-node cluster on Photon:
 
     ```shell
     $ hack/vagrant.sh -b photon -3 -- up
@@ -46,9 +46,9 @@ Please follow these steps to provision a Kubernetes cluster with Vagrant and yak
     | `c02` | A control plane node on which workloads may be scheduled |
     | `w01` | A dedicated worker node |
 
-4. Once all of the nodes have been created and provisioned, the following command can be used to follow the yakity process as it deploys Kubernetes:
+4. Once all of the nodes have been created and provisioned, the following command can be used to follow the sk8 process as it deploys Kubernetes:
     ```shell
-    $ hack/vagrant.sh -- ssh c01 -c 'tail -f /var/log/yakity/yakity.log'
+    $ hack/vagrant.sh -- ssh c01 -c 'tail -f /var/log/sk8/sk8.log'
     ```
 
     The other nodes may be monitored with the same command, just replace `c01` with either `c02` or `w01`.
@@ -70,8 +70,8 @@ Please follow these steps to provision a Kubernetes cluster with Vagrant and yak
     ```shell
     $ hack/kubectl.sh get nodes
     NAME         STATUS    ROLES     AGE       VERSION
-    c02.yakity   Ready     <none>    118s      v1.12.2
-    w01.yakity   Ready     <none>    118s      v1.12.2
+    c02.sk8   Ready     <none>    118s      v1.12.2
+    w01.sk8   Ready     <none>    118s      v1.12.2
     ```
 
     ```shell
@@ -87,7 +87,7 @@ Please follow these steps to provision a Kubernetes cluster with Vagrant and yak
 
 ## Deploying local Kubernetes builds
 The program `hack/vagrant.sh` accepts the flag `-k` in order to specify the
-[version](https://github.com/akutz/yakity/wiki/Kubernetes-version) of
+[version](https://github.com/vmware/simple-k8s-test-env/wiki/Kubernetes-version) of
 Kubernetes to install. However, the flag may *also* be used to deploy a 
 **local** build of Kubernetes!
 
@@ -109,10 +109,10 @@ $ hack/vagrant.sh -b ubuntu -3 -k local -- up
 ```
 
 ### Bring your own builds
-Yakity does not build Kubernetes from source. In fact, the directory specified
+Sk8 does not build Kubernetes from source. In fact, the directory specified
 with the `-k` flag doesn't have to be a Kubernetes source directory at all.
-It's simply the case that the files for which yakity searches are *likely* to be
-found in the Kubernetes source directory. Yakity performs a recursive search
+It's simply the case that the files for which sk8 searches are *likely* to be
+found in the Kubernetes source directory. Sk8 performs a recursive search
 of the directory looking for any of the following file groups:
 
 **Client**
@@ -209,7 +209,7 @@ in which directory to look for the files related to the deployed cluster. For
 instance, the above configuration file produces the SHA-1 hash, 
 `b007db9f0fb38732d6f4bdaafab06d0823b13698`. The first seven characters from this
 string are use to generate the data directory for the cluster, 
-`${HOME}/.yakity/vagrant/b007db9`.
+`${HOME}/.sk8/vagrant/b007db9`.
 
 ### The `instance` symlink
 Another result of invoking the above commands is the creation of an `instance`
@@ -223,8 +223,8 @@ $ hack/vagrant.sh -b photon
 Aside from standing up a new Kubernetes cluster, the above command will also
 create the following:
 
-* `${HOME}/.yakity/vagrant/64fecd2`
-* `${HOME}/.yakity/vagrant/instance`
+* `${HOME}/.sk8/vagrant/64fecd2`
+* `${HOME}/.sk8/vagrant/instance`
 
 The first path is the data directory for the new cluster. The second path is
 a symlink that references the first path. The benefit this provides is the
@@ -233,7 +233,7 @@ line flags needed to derive the configuration checksum:
 ```shell
 $ hack/kubectl.sh -- get nodes
 NAME         STATUS    ROLES     AGE       VERSION
-c01.yakity   Ready     <none>    25m       v1.12.2
+c01.sk8   Ready     <none>    25m       v1.12.2
 ```
 
 The `instance` symlink is updated everytime one of the helper commands is

@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Yakity
+# simple-kubernetes-test-environment
 #
 # Copyright (c) 2018 VMware, Inc. All Rights Reserved.
 #
@@ -16,7 +16,7 @@
 # verified by https://www.shellcheck.net
 
 #
-# Initializes a local environment at $HOME/.yakity/CLUSTER_ID for accessing 
+# Initializes a local environment at $HOME/.sk8/CLUSTER_ID for accessing 
 # a remote Kubernetes cluster.
 #
 
@@ -88,20 +88,20 @@ cluster_id7="$(echo "${cluster_id}" | cut -c-7)"
 echo2 'success!'
 
 # Create the local environment.
-yak_dir="${HOME}/.yakity/${cluster_id7}"
-mkdir_and_chmod "${yak_dir}"
-mkdir_and_chmod "${yak_dir}/bin"
-mkdir_and_chmod "${yak_dir}/.cluster"
-mkdir_and_chmod "${yak_dir}/.load-balancer"
-mkdir_and_chmod "${yak_dir}/.ssh" && chmod 0700 "${yak_dir}/.ssh"
+sk8_dir="${HOME}/.sk8/${cluster_id7}"
+mkdir_and_chmod "${sk8_dir}"
+mkdir_and_chmod "${sk8_dir}/bin"
+mkdir_and_chmod "${sk8_dir}/.cluster"
+mkdir_and_chmod "${sk8_dir}/.load-balancer"
+mkdir_and_chmod "${sk8_dir}/.ssh" && chmod 0700 "${sk8_dir}/.ssh"
 
 # Save the full cluster ID.
-cluster_id_file="${yak_dir}/.cluster/id"
+cluster_id_file="${sk8_dir}/.cluster/id"
 echo "${cluster_id}" >"${cluster_id_file}"
 
 # Get the cluster members.
 printf2 '  % -30s' '* members'
-cluster_members_file="${yak_dir}/.cluster/members"
+cluster_members_file="${sk8_dir}/.cluster/members"
 if ! rpc_get "${vm_uuid}" CLUSTER_MEMBERS | \
   tr '[:space:]' '\n' 1>"${cluster_members_file}" || \
   is_file_empty "${cluster_members_file}"; then
@@ -111,7 +111,7 @@ echo2 'success!'
 
 # Save the cluster's SSH key.
 printf2 '  % -30s' '* ssh key'
-ident_file="${yak_dir}/.ssh/id_rsa"
+ident_file="${sk8_dir}/.ssh/id_rsa"
 if ! rpc_get "${vm_uuid}" SSH_PRV_KEY \
   "-----END RSA PRIVATE KEY-----" 1>"${ident_file}" || \
   is_file_empty "${ident_file}"; then
@@ -122,7 +122,7 @@ echo2 'success!'
 
 # Save the cluster's kubeconfig.
 printf2 '  % -30s' '* kubeconfig'
-kubeconfig="${yak_dir}/kubeconfig"
+kubeconfig="${sk8_dir}/kubeconfig"
 if ! rpc_get "${vm_uuid}" KUBECONFIG 'guestinfo.' | \
   sed '$d' 1>"${kubeconfig}" || \
   is_file_empty "${kubeconfig}"; then
@@ -132,7 +132,7 @@ echo2 'success!'
 
 # Save the cluster's load balancer ID
 printf2 '  % -30s' '* load-balancer'
-lb_id_file="${yak_dir}/.load-balancer/id"
+lb_id_file="${sk8_dir}/.load-balancer/id"
 if val="$(rpc_get "${vm_uuid}" LOAD_BALANCER_ID)" && [ -n "${val}" ]; then
   echo "${val}" >"${lb_id_file}"
   echo2 'success!'
@@ -145,11 +145,11 @@ echo2 "generating cluster access"
 
 # Write the cluster's SSH config.
 printf2 '  % -30s' '* ssh config'
-ssh_config="${yak_dir}/.ssh/config"
+ssh_config="${sk8_dir}/.ssh/config"
 cat <<EOF >"${ssh_config}"
 ServerAliveInterval 300
 TCPKeepAlive        no
-UserKnownHostsFile  ${yak_dir}/.ssh/known_hosts
+UserKnownHostsFile  ${sk8_dir}/.ssh/known_hosts
 
 EOF
 
@@ -190,12 +190,12 @@ echo2
 echo2 "generating commands"
 
 printf2 '  % -30s' '* ssh'
-ssh_cmd="${yak_dir}/ssh"
+ssh_cmd="${sk8_dir}/ssh"
 if sys_cmd="$(command -v ssh 2>/dev/null)"; then
   cat <<EOF >"${ssh_cmd}"
 #!/bin/sh
 
-# Yakity
+# simple-kubernetes-test-environment
 #
 # Copyright (c) 2018 VMware, Inc. All Rights Reserved.
 #
@@ -210,18 +210,18 @@ if sys_cmd="$(command -v ssh 2>/dev/null)"; then
 ${sys_cmd} -F ${ssh_config} "\${@}"
 EOF
   chmod 0755 "${ssh_cmd}"
-  [ -e "${yak_dir}/bin/ssh-${cluster_id7}" ] || \
-    ln -s "${ssh_cmd}" "${yak_dir}/bin/ssh-${cluster_id7}" >/dev/null 2>&1
+  [ -e "${sk8_dir}/bin/ssh-${cluster_id7}" ] || \
+    ln -s "${ssh_cmd}" "${sk8_dir}/bin/ssh-${cluster_id7}" >/dev/null 2>&1
 fi
 echo2 'success!'
 
 printf2 '  % -30s' '* scp'
-scp_cmd="${yak_dir}/scp"
+scp_cmd="${sk8_dir}/scp"
 if sys_cmd="$(command -v scp 2>/dev/null)"; then
   cat <<EOF >"${scp_cmd}"
 #!/bin/sh
 
-# Yakity
+# simple-kubernetes-test-environment
 #
 # Copyright (c) 2018 VMware, Inc. All Rights Reserved.
 #
@@ -236,18 +236,18 @@ if sys_cmd="$(command -v scp 2>/dev/null)"; then
 ${sys_cmd} -F ${ssh_config} "\${@}"
 EOF
   chmod 0755 "${scp_cmd}"
-  [ -e "${yak_dir}/bin/scp-${cluster_id7}" ] || \
-    ln -s "${scp_cmd}" "${yak_dir}/bin/scp-${cluster_id7}" >/dev/null 2>&1
+  [ -e "${sk8_dir}/bin/scp-${cluster_id7}" ] || \
+    ln -s "${scp_cmd}" "${sk8_dir}/bin/scp-${cluster_id7}" >/dev/null 2>&1
 fi
 echo2 'success!'
 
 printf2 '  % -30s' '* kubectl'
-kubectl_cmd="${yak_dir}/kubectl"
+kubectl_cmd="${sk8_dir}/kubectl"
 if sys_cmd="$(command -v kubectl)"; then
   cat <<EOF >"${kubectl_cmd}"
 #!/bin/sh
 
-# Yakity
+# simple-kubernetes-test-environment
 #
 # Copyright (c) 2018 VMware, Inc. All Rights Reserved.
 #
@@ -262,17 +262,17 @@ if sys_cmd="$(command -v kubectl)"; then
 ${sys_cmd} --kubeconfig "${kubeconfig}" "\${@}"
 EOF
   chmod 0755 "${kubectl_cmd}"
-  [ -e "${yak_dir}/bin/kubectl-${cluster_id7}" ] || \
-    ln -s "${kubectl_cmd}" "${yak_dir}/bin/kubectl-${cluster_id7}" >/dev/null 2>&1
+  [ -e "${sk8_dir}/bin/kubectl-${cluster_id7}" ] || \
+    ln -s "${kubectl_cmd}" "${sk8_dir}/bin/kubectl-${cluster_id7}" >/dev/null 2>&1
 fi
 echo2 'success!'
 
 printf2 '  % -30s' '* turn-down'
-turn_down_cmd="${yak_dir}/turn-down"
+turn_down_cmd="${sk8_dir}/turn-down"
 cat <<EOF >"${turn_down_cmd}"
 #!/bin/sh
 
-# Yakity
+# simple-kubernetes-test-environment
 #
 # Copyright (c) 2018 VMware, Inc. All Rights Reserved.
 #
@@ -323,13 +323,13 @@ for target_group_id in \${target_group_ids}; do
 done
 EOF
 chmod 0755 "${turn_down_cmd}"
-[ -e "${yak_dir}/bin/turn-down-${cluster_id7}" ] || \
-    ln -s "${turn_down_cmd}" "${yak_dir}/bin/turn-down-${cluster_id7}" >/dev/null 2>&1
+[ -e "${sk8_dir}/bin/turn-down-${cluster_id7}" ] || \
+    ln -s "${turn_down_cmd}" "${sk8_dir}/bin/turn-down-${cluster_id7}" >/dev/null 2>&1
 echo2 'success!'
 
 cat <<EOF 1>&2
 
-cluster access is now enabled at ${yak_dir}.
+cluster access is now enabled at ${sk8_dir}.
 several aliases of common programs are available:
 
   * ssh-${cluster_id7}
@@ -339,6 +339,6 @@ several aliases of common programs are available:
 
 to use the above programs, execute the following:
 
-  export PATH="${yak_dir}/bin:\${PATH}"
+  export PATH="${sk8_dir}/bin:\${PATH}"
 
 EOF

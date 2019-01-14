@@ -1,7 +1,7 @@
 # -*- mode: ruby -*-
 # vi: set ft=ruby :
 
-# Yakity
+# simple-kubernetes-test-environment
 #
 # Copyright (c) 2018 VMware, Inc. All Rights Reserved.
 #
@@ -42,7 +42,7 @@ CLOUD_PROVIDER_IMAGE=ENV['CLOUD_PROVIDER_IMAGE'] || 'gcr.io/cloud-provider-vsphe
 # MACHINE ID AND DHCP
 # The Photon box ships with a static machine-id, which means
 # in a multi-machine deployment, all the boxes will have the
-# same DHCP-provided IP address. This causes yakity to break
+# same DHCP-provided IP address. This causes sk8 to break
 # since etcd is advertising IP addresses that must be unique.
 #
 # This script disables the host-only NIC, recreates the
@@ -72,7 +72,7 @@ echo '. /etc/profile' >>/home/vagrant/.bashrc
 EOF
 
 INIT_GUEST_SCRIPT = <<-EOF
-mkdir -p /var/lib/yakity /opt/bin
+mkdir -p /var/lib/sk8 /opt/bin
 chmod 0755 /opt /opt/bin
 EOF
 
@@ -304,7 +304,7 @@ Vagrant.configure("2") do |config|
       end
 
       # Assign the fully-qualified host name.
-      node.vm.hostname = "#{node_config[:host]}.yakity"
+      node.vm.hostname = "#{node_config[:host]}.sk8"
 
       # Handle box-specific requirements.
       if (/(?i)photon/ =~ $box)
@@ -335,31 +335,31 @@ Vagrant.configure("2") do |config|
           destination:  "/var/tmp/opt/bin"
       end
 
-      # Copy the yakity script and certificate authority cert/key pair
+      # Copy the sk8 script and certificate authority cert/key pair
       # to the /var/tmp folder on the VM.
-      copy_file_to_dir(node, '../yakity.sh')
-      copy_file_to_dir(node, 'yakity.service')
+      copy_file_to_dir(node, '../sk8.sh')
+      copy_file_to_dir(node, 'sk8.service')
       copy_file_to_dir(node, 'tail-log.sh')
       copy_file_to_dir(node, TLS_CA_CRT)
       copy_file_to_dir(node, TLS_CA_KEY)
 
-      node.vm.provision "init-yakity", type: "shell" do |s|
+      node.vm.provision "init-sk8", type: "shell" do |s|
         s.inline = <<-SHELL
-          # Move the yakity script into /var/lib/yakity
+          # Move the sk8 script into /var/lib/sk8
           # and ensure it is executable.
-          mv /var/tmp/yakity.sh /var/lib/yakity
-          chown root:root /var/lib/yakity/yakity.sh
-          chmod 0755 /var/lib/yakity/yakity.sh
+          mv /var/tmp/sk8.sh /var/lib/sk8
+          chown root:root /var/lib/sk8/sk8.sh
+          chmod 0755 /var/lib/sk8/sk8.sh
 
-          # Move the tail-log script into /var/lib/yakity
+          # Move the tail-log script into /var/lib/sk8
           # and ensure it is executable.
-          mv /var/tmp/tail-log.sh /var/lib/yakity
-          chown root:root /var/lib/yakity/tail-log.sh
-          chmod 0755 /var/lib/yakity/tail-log.sh
+          mv /var/tmp/tail-log.sh /var/lib/sk8
+          chown root:root /var/lib/sk8/tail-log.sh
+          chmod 0755 /var/lib/sk8/tail-log.sh
 
-          # Move the yakity service into /var/lib/yakity.
-          mv /var/tmp/yakity.service /var/lib/yakity
-          chown root:root /var/lib/yakity/yakity.service
+          # Move the sk8 service into /var/lib/sk8.
+          mv /var/tmp/sk8.service /var/lib/sk8
+          chown root:root /var/lib/sk8/sk8.service
 
           # Move the certificate authority cert/key pair
           # into /etc/ssl and set the file permissions.
@@ -375,10 +375,10 @@ Vagrant.configure("2") do |config|
             chmod -R 0755 /opt/bin
           fi
 
-          # Write the yakity configuration file.
+          # Write the sk8 configuration file.
           nic=$(ip a | grep '^3:' | awk -F: '{print $2}' | tr -d '[:space:]')
           ip4=$(ip route get dev "${nic}" 1 | awk '{print $NF;exit}')
-          cat <<EOF >/etc/default/yakity
+          cat <<EOF >/etc/default/sk8
 K8S_VERSION="#{$k8s_version}"
 IPV4_ADDRESS="${ip4}"
 ETCD_DISCOVERY="#{$etcd_disco}"
@@ -394,14 +394,14 @@ CLOUD_PROVIDER_EXTERNAL="#{CLOUD_PROVIDER_EXTERNAL}"
 CLOUD_PROVIDER_IMAGE="#{CLOUD_PROVIDER_IMAGE}"
 EOF
 
-          # Enable the yakity service (but do not start it).
-          systemctl -l enable /var/lib/yakity/yakity.service
+          # Enable the sk8 service (but do not start it).
+          systemctl -l enable /var/lib/sk8/sk8.service
         SHELL
       end
 
-      # Start the yakity service.
-      node.vm.provision "start-yakity", type: "shell" do |s|
-        s.inline = "systemctl -l --no-block start yakity"
+      # Start the sk8 service.
+      node.vm.provision "start-sk8", type: "shell" do |s|
+        s.inline = "systemctl -l --no-block start sk8"
       end
     end
   end

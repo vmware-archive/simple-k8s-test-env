@@ -1,5 +1,5 @@
 # kube-update
-When deployed on vSphere as an OVA, yakity supports the `kube-update` service --
+When deployed on vSphere as an OVA, sk8 supports the `kube-update` service --
 updating Kubernetes components on a live cluster with incremental builds from a
 developer's desktop.
 

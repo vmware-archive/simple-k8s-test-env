@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Yakity
+# simple-kubernetes-test-environment
 #
 # Copyright (c) 2018 VMware, Inc. All Rights Reserved.
 #
@@ -27,7 +27,7 @@
 #
 #    * https{0,1}://
 #      An URL that points to a remote location that follows the rules
-#      for staging K8s builds. This option enables yakity to use a custom
+#      for staging K8s builds. This option enables sk8 to use a custom
 #      build staged with "kubetest".
 #
 # Whether a URL is discerned from K8S_VERSION or it is set to a URL, the

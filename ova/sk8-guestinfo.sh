@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Yakity
+# simple-kubernetes-test-environment
 #
 # Copyright (c) 2018 VMware, Inc. All Rights Reserved.
 #
@@ -16,26 +16,26 @@
 # verified by https://www.shellcheck.net
 
 #
-# Used by the yakity service to write the yakity environment
+# Used by the sk8 service to write the sk8 environment
 # file by reading properties from the VMware GuestInfo interface.
 #
 
-# Load the yakity commons library.
+# Load the sk8 commons library.
 # shellcheck disable=SC1090
-. "$(pwd)/yakity-common.sh"
+. "$(pwd)/sk8-common.sh"
 
 _done_file="$(pwd)/.$(basename "${0}").done"
 [ ! -f "${_done_file}" ] || exit 0
 touch "${_done_file}"
 
-YAK_DEFAULTS="${YAK_DEFAULTS:-/etc/default/yakity}"
+SK8_DEFAULTS="${SK8_DEFAULTS:-/etc/default/sk8}"
 
 write_config_val() {
   if [ -n "${2}" ]; then
-    printf '%s="%s"\n' "${1}" "${2}" >>"${YAK_DEFAULTS}"
+    printf '%s="%s"\n' "${1}" "${2}" >>"${SK8_DEFAULTS}"
     printf 'set config val\n  key = %s\n' "${1}" 1>&2
   elif val="$(rpc_get "${1}")" && [ -n "${val}" ]; then
-    printf '%s="%s"\n' "${1}" "${val}" >>"${YAK_DEFAULTS}"
+    printf '%s="%s"\n' "${1}" "${val}" >>"${SK8_DEFAULTS}"
     printf 'set config val\n  key = %s\n' "${1}" 1>&2
   fi
 }
@@ -47,6 +47,6 @@ write_config_val ETCD_DISCOVERY
 # Iterate over the common config keys to write to the config file.
 while IFS= read -r key; do
   write_config_val "${key}"
-done <yakity-config-keys.env
+done <sk8-config-keys.env
 
 exit 0

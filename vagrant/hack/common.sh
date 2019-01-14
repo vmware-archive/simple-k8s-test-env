@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Yakity
+# simple-kubernetes-test-environment
 #
 # Copyright (c) 2018 VMware, Inc. All Rights Reserved.
 #
@@ -25,8 +25,8 @@ set -o pipefail
 usage() {
   cat <<EOF
 usage: ${0} FLAGS ${PROGRAM}
-  This program wraps ${PROGRAM} with some flags specific to yakity. After
-  the yakity flags and their arguments are provided, ${PROGRAM} is exec'd
+  This program wraps ${PROGRAM} with some flags specific to sk8. After
+  the sk8 flags and their arguments are provided, ${PROGRAM} is exec'd
   with the remainder of the command line.
 
 FLAGS
@@ -74,8 +74,8 @@ KUBERNETES VERSION
   mounts the path into the VM(s) as "/var/lib/kubernetes/install/local" and
   set the Kubernetes version to "file:///var/lib/kubernetes/install/local".
   
-  The yakity process executing inside of the VM(s) checks to see if the
-  configured Kubernetes version begins with "file://". If it does, yakity
+  The sk8 process executing inside of the VM(s) checks to see if the
+  configured Kubernetes version begins with "file://". If it does, sk8
   processes the contents of the directory using the ascribed manner:
 
     1.  An attempt is made to locate the following release tarballs:
@@ -106,7 +106,7 @@ KUBERNETES VERSION
   deploying Kubernetes using local development builds.
 
   To read more about the valid versions that may be deployed, please see
-  https://github.com/akutz/yakity/wiki/Kubernetes-version.
+  https://github.com/vmware/simple-k8s-test-env/wiki/Kubernetes-version.
 
 NUMBER OF NODES
   The -1, -2, and -3 flags are used to set the number of nodes in the cluster.
@@ -181,7 +181,7 @@ validate_provider() {
   fatal "invalid provider: ${1}"
 }
 
-vagrant_home="${HOME}/.yakity/vagrant"
+vagrant_home="${HOME}/.sk8/vagrant"
 instance="${vagrant_home}/instance"
 config="${instance}/config.yaml"
 

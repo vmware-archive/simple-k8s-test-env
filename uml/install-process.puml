@@ -1,5 +1,5 @@
 /'
-Yakity
+simple-kubernetes-test-environment
 
 Copyright (c) 2018 VMware, Inc. All Rights Reserved.
 
@@ -14,19 +14,19 @@ file.
 
 @startuml install-process
 right header
-yakity
+sk8
 endheader
 right footer
 
 akutz at VMware
-https://github.com/akutz/yakity
+https://github.com/vmware/simple-k8s-test-env
 endfooter
 
-title Generic execution of yakity\n
+title Generic execution of sk8\n
 
 start
 :parse command line args;
-:load config from ""/etc/default/yakity"";
+:load config from ""/etc/default/sk8"";
 :add ""/opt/bin"" to ""PATH"";
 :generate ""/opt/bin/node-type"" command;
 :configure the shell prompt;
@@ -78,7 +78,7 @@ partition "Discovery" {
     :get etcd cluster members;
   repeat while (not all control plane members have joined the etcd cluster)
   :configure etcdctl;
-  :grant etcd lease for yakity properties;
+  :grant etcd lease for sk8 properties;
   :upload host/node information to etcd;
   repeat
     :get node info from etcd;

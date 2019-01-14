@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Yakity
+# simple-kubernetes-test-environment
 #
 # Copyright (c) 2018 VMware, Inc. All Rights Reserved.
 #
@@ -74,8 +74,8 @@ is_false() { ! is_true "${1}"; }; export is_false
 ################################################################################
 
 # Check for debug mode.
-DEBUG="$(rpctool get yakity.DEBUG)" || \
-  { xc="${?}"; echo2 "rpctool: get yakity.DEBUG failed"; exit "${xc}"; }
+DEBUG="$(rpctool get sk8.DEBUG)" || \
+  { xc="${?}"; echo2 "rpctool: get sk8.DEBUG failed"; exit "${xc}"; }
 [ -n "${DEBUG}" ] || DEBUG="$(rpctool get.ovf DEBUG)" || \
   { xc="${?}"; echo2 "rpctool: get ovfEnv.DEBUG failed"; exit "${xc}"; }
 DEBUG="$(parse_bool "${DEBUG}")"
@@ -99,8 +99,8 @@ is_debug && { set -x; LOG_LEVEL="${DEBUG_LEVEL}"; }
 #   * 4, INFO
 #   * 5, DEBUG
 if [ -z "${LOG_LEVEL}" ]; then
-  LOG_LEVEL="$(rpctool get yakity.LOG_LEVEL)" || \
-    { xc="${?}"; echo2 "rpctool: get yakity.LOG_LEVEL failed"; exit "${xc}"; }
+  LOG_LEVEL="$(rpctool get sk8.LOG_LEVEL)" || \
+    { xc="${?}"; echo2 "rpctool: get sk8.LOG_LEVEL failed"; exit "${xc}"; }
   [ -n "${LOG_LEVEL}" ] || LOG_LEVEL="$(rpctool get.ovf LOG_LEVEL)" || \
     { xc="${?}"; echo2 "rpctool: get ovfEnv.LOG_LEVEL failed"; exit "${xc}"; }
   LOG_LEVEL="${LOG_LEVEL:-${INFO_LEVEL}}"
@@ -194,17 +194,17 @@ get_self_uuid() {
 }
 export get_self_uuid
 
-# Sets a guestinfo property in the yakity namespace.
+# Sets a guestinfo property in the sk8 namespace.
 rpc_set() {
-  rpctool set "yakity.${1}" "${2}" || fatal "rpctool: set yakity.${1} failed"
+  rpctool set "sk8.${1}" "${2}" || fatal "rpctool: set sk8.${1} failed"
 }
 export rpc_set
 
-# Gets a guestinfo property in the yakity namespace or the OVF environment.
+# Gets a guestinfo property in the sk8 namespace or the OVF environment.
 rpc_get() {
-  _val="$(rpctool get "yakity.${1}")" || fatal "rpctool: get yakity.${1} failed"
+  _val="$(rpctool get "sk8.${1}")" || fatal "rpctool: get sk8.${1} failed"
   if [ -n "${_val}" ] && [ ! "${_val}" = "null" ]; then
-    debug "rpc_get: key=${1} src=guestinfo.yakity"
+    debug "rpc_get: key=${1} src=guestinfo.sk8"
     echo "${_val}"
     return
   fi
@@ -217,7 +217,7 @@ rpc_get() {
 export rpc_get
 
 ################################################################################
-##                                 yakity                                     ##
+##                                 sk8                                     ##
 ################################################################################
 
 parse_node_type() {
@@ -344,7 +344,7 @@ CLUSTER ID
 ${_cluster_id7}
 
 REMOTE ACCESS
-curl -sSL http://bit.ly/yakcess | sh -s -- ${_vm_uuid}
+curl -sSL http://bit.ly/toepick | sh -s -- ${_vm_uuid}
 EOF
 }
 

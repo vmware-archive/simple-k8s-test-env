@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Yakity
+# simple-kubernetes-test-environment
 #
 # Copyright (c) 2018 VMware, Inc. All Rights Reserved.
 #
@@ -20,9 +20,9 @@
 # to update K8s components on a running cluster.
 #
 
-# Load the yakity commons library.
+# Load the sk8 commons library.
 # shellcheck disable=SC1090
-. "$(pwd)/yakity-common.sh"
+. "$(pwd)/sk8-common.sh"
 
 # The inotifywait program is required. If missing please install the
 # distribution's inotify-tools (or equivalent) package.
@@ -33,10 +33,10 @@ require_program inotifywait
 SKIP_DUPLICATES="$(parse_bool "${SKIP_DUPLICATES}" true)"
 
 # The directories where clients and peers upload files.
-CLIENT_DIR=/var/lib/yakity/kube-update/client-uploads
-PEER_IN_DIR=/var/lib/yakity/kube-update/peer-in
-PEER_OUT_DIR=/var/lib/yakity/kube-update/peer-out
-mkdir_and_chmod /var/lib/yakity /var/lib/yakity/kube-update \
+CLIENT_DIR=/var/lib/sk8/kube-update/client-uploads
+PEER_IN_DIR=/var/lib/sk8/kube-update/peer-in
+PEER_OUT_DIR=/var/lib/sk8/kube-update/peer-out
+mkdir_and_chmod /var/lib/sk8 /var/lib/sk8/kube-update \
                 "${CLIENT_DIR}" "${PEER_IN_DIR}" "${PEER_OUT_DIR}"
 info_env_var CLIENT_DIR PEER_IN_DIR PEER_OUT_DIR
 

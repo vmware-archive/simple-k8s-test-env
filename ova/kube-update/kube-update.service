@@ -1,4 +1,4 @@
-# Yakity
+# simple-kubernetes-test-environment
 #
 # Copyright (c) 2018 VMware, Inc. All Rights Reserved.
 #
@@ -28,11 +28,11 @@ WantedBy=multi-user.target
 [Service]
 Type=simple
 TimeoutSec=0
-WorkingDirectory=/var/lib/yakity
+WorkingDirectory=/var/lib/sk8
 
-# Create the yakity log directory.
-ExecStartPre=/bin/mkdir -p /var/log/yakity
+# Create the sk8 log directory.
+ExecStartPre=/bin/mkdir -p /var/log/sk8
 
 # This script monitors /kube-update for uploaded files and replaces K8s
 # components with updated copies.
-ExecStart=/bin/sh -c '/var/lib/yakity/kube-update.sh 2>&1 | tee /var/log/yakity/kube-update.log'
+ExecStart=/bin/sh -c '/var/lib/sk8/kube-update.sh 2>&1 | tee /var/log/sk8/kube-update.log'

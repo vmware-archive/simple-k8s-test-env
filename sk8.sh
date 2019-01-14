@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Yakity
+# simple-kubernetes-test-environment
 #
 # Copyright (c) 2018 VMware, Inc. All Rights Reserved.
 #
@@ -19,14 +19,14 @@
 # Turns up a Kubernetes cluster. Supports single-node, single-master,
 # and multi-master deployments.
 #
-# usage: yakity.sh
-#        yakity.sh NODE_TYPE ETCD_DISCOVERY NUM_CONTROLLERS NUM_NODES
+# usage: sk8.sh
+#        sk8.sh NODE_TYPE ETCD_DISCOVERY NUM_CONTROLLERS NUM_NODES
 #
 #   SINGLE NODE CLUSTER
-#     To deploy a single node cluster execute "yakity.sh" with no arguments.
+#     To deploy a single node cluster execute "sk8.sh" with no arguments.
 #
 #   MULTI NODE CLUSTER
-#     To deploy a multi-node cluster execute "yakity.sh" with the following
+#     To deploy a multi-node cluster execute "sk8.sh" with the following
 #     arguments on each controller and worker node in the cluster.
 #
 #       NODE_TYPE        May be set to "controller", "worker", or "both".
@@ -123,12 +123,12 @@ fatal() {
   [ "${ret_code}" -eq "0" ] || exit "${ret_code}"
 }
 
-# If the yakity defaults file is present then load it.
-YAK_DEFAULTS=${YAK_DEFAULTS:-/etc/default/yakity}
-if [ -e "${YAK_DEFAULTS}" ]; then
-  info "loading defaults = ${YAK_DEFAULTS}"
+# If the sk8 defaults file is present then load it.
+SK8_DEFAULTS=${SK8_DEFAULTS:-/etc/default/sk8}
+if [ -e "${SK8_DEFAULTS}" ]; then
+  info "loading defaults = ${SK8_DEFAULTS}"
   # shellcheck disable=SC1090
-  . "${YAK_DEFAULTS}" || fatal "failed to load defaults = ${YAK_DEFAULTS}"
+  . "${SK8_DEFAULTS}" || fatal "failed to load defaults = ${SK8_DEFAULTS}"
 fi
 
 # Add ${BIN_DIR} to the path
@@ -364,7 +364,7 @@ info "HOST_NAME=${HOST_NAME}"
 info "IPV4_ADDRESS=${IPV4_ADDRESS}"
 info "NETWORK_DOMAIN=${NETWORK_DOMAIN}"
 
-# The number of seconds the keys associated with yakity will exist
+# The number of seconds the keys associated with sk8 will exist
 # before being removed by the etcd server.
 #
 # The default value is 15 minutes.
@@ -417,7 +417,7 @@ LOG_LEVEL_CLOUD_CONTROLLER_MANAGER="${LOG_LEVEL_CLOUD_CONTROLLER_MANAGER:-${LOG_
 #
 #   * Creates a secret named "kubeconfig" in the "e2e" namespace. This
 #     secret may be mounted as a volume to /etc/kubernetes to the image
-#     gcr.io/kubernetes-conformance-testing/yake2e-job in order
+#     gcr.io/kubernetes-conformance-testing/sk8e2e-job in order
 #     to provide the container with a kubeconfig that can be used to
 #     run the e2e tests.
 INSTALL_CONFORMANCE_TESTS="${INSTALL_CONFORMANCE_TESTS:-true}"
@@ -555,7 +555,7 @@ VCSIM_PORT="${VCSIM_PORT:-8989}"
 #
 #    * https{0,1}://
 #      An URL that points to a remote location that follows the rules
-#      for staging K8s builds. This option enables yakity to use a custom
+#      for staging K8s builds. This option enables sk8 to use a custom
 #      build staged with "kubetest".
 #
 # Whether a URL is discerned from K8S_VERSION or it is set to a URL, the
@@ -718,11 +718,11 @@ do_with_lock() {
 # "etcdctl put --lease=ETCD_LEASE_ID"
 #PUT_WITH_LEASE=
 
-# Grants a lease used to store all the keys added to etcd by yakity.
+# Grants a lease used to store all the keys added to etcd by sk8.
 grant_etcd_lease() {
-  lease_id_key="/yakity/lease/id"
-  lease_ttl_key="/yakity/lease/ttl"
-  lease_grantor_key="/yakity/lease/grantor"
+  lease_id_key="/sk8/lease/id"
+  lease_ttl_key="/sk8/lease/ttl"
+  lease_grantor_key="/sk8/lease/grantor"
 
   ETCD_LEASE_ID=$(etcdctl get "${lease_id_key}" --print-value-only) || \
     { error "failed to get lease id"; return; }
@@ -1416,9 +1416,9 @@ install_ca_files() {
   fi
 
   mkdir -p /etc/ssl/certs; chmod 0755 /etc/ssl/certs;
-  rm -f /etc/ssl/certs/yakity-ca.crt
-  ln -s "${TLS_CA_CRT}" /etc/ssl/certs/yakity-ca.crt
-  debug "linked ${TLS_CA_CRT} to /etc/ssl/certs/yakity-ca.crt"
+  rm -f /etc/ssl/certs/sk8-ca.crt
+  ln -s "${TLS_CA_CRT}" /etc/ssl/certs/sk8-ca.crt
+  debug "linked ${TLS_CA_CRT} to /etc/ssl/certs/sk8-ca.crt"
 
   debug "installed CAs"
 }
@@ -2005,7 +2005,7 @@ put_node_info() {
   # Get the number of nodes that have already stored their information.
   # This becomes the node's index, which is important as it forms
   # the node's pod-cidr.
-  NODE_INDEX=$(etcdctl get '/yakity/nodes/' --prefix --keys-only | grep -cv '^$')
+  NODE_INDEX=$(etcdctl get '/sk8/nodes/' --prefix --keys-only | grep -cv '^$')
 
   # Build this node's pod cidr.
   # shellcheck disable=SC2059
@@ -2013,7 +2013,7 @@ put_node_info() {
     POD_CIDR=$(printf "${POD_CIDR_FORMAT}" "${NODE_INDEX}")
   fi
   
-  node_info_key="/yakity/nodes/${NODE_INDEX}"
+  node_info_key="/sk8/nodes/${NODE_INDEX}"
   debug "node info key=${node_info_key}"
   
   _uuid=$(get_product_uuid) || return "${?}"
@@ -2038,7 +2038,7 @@ EOF
 }
 
 get_all_node_info() {
-  etcdctl get /yakity/nodes --sort-by=KEY --prefix
+  etcdctl get /sk8/nodes --sort-by=KEY --prefix
 }
 
 #get_all_node_ipv4_addresses() {
@@ -2046,7 +2046,7 @@ get_all_node_info() {
 #}
 
 get_all_node_ipv4_addresses() {
-  etcdctl get /yakity/nodes --sort-by=KEY --prefix \
+  etcdctl get /sk8/nodes --sort-by=KEY --prefix \
     --print-value-only | jq -rs '.[] | .ipv4_address'
 }
 
@@ -2062,7 +2062,7 @@ wait_on_all_node_info() {
     
     # Break out of the loop if the number of nodes that have stored
     # their info matches the number of expected nodes.
-    num_nodes=$(etcdctl get '/yakity/nodes/' --prefix --keys-only | grep -cv '^$')
+    num_nodes=$(etcdctl get '/sk8/nodes/' --prefix --keys-only | grep -cv '^$')
     [ "${num_nodes}" -eq "${NUM_NODES}" ] && break
 
     sleep 3
@@ -2074,7 +2074,7 @@ wait_on_all_node_info() {
 # Prints the information each node uploaded about itself to the etcd server.
 print_all_node_info() {
   i=0 && while true; do
-    node_info_key="/yakity/nodes/${i}"
+    node_info_key="/sk8/nodes/${i}"
     node_info=$(etcdctl get "${node_info_key}" --print-value-only) || break
     [ -z "${node_info}" ] && break
     if ! node_info_val=$(echo "${node_info}" | jq ''); then
@@ -2545,7 +2545,7 @@ fetch_kubeconfig() {
 # controller/worker nodes.
 generate_or_fetch_shared_kubernetes_assets() {
   # The key prefix for shared assets.
-  shared_assets_prefix="/yakity/shared"
+  shared_assets_prefix="/sk8/shared"
 
   # Stores the name of the node that generates the shared assets.
   init_node_key="${shared_assets_prefix}/init-node"
@@ -2835,7 +2835,7 @@ apply_rbac() {
   info "configuring kubernetes RBAC"
 
   # Stores the name of the node that configures rbac.
-  init_rbac_key="/yakity/init-rbac"
+  init_rbac_key="/sk8/init-rbac"
 
   # Check to see if the init routine has already run on another node.
   name_of_init_node=$(etcdctl get --print-value-only "${init_rbac_key}") || \
@@ -3310,7 +3310,7 @@ apply_service_dns() {
   info "configuring kubernetes service DNS"
 
   # Stores the name of the node that configures service DNS.
-  init_svc_dns_key="/yakity/init-service-dns"
+  init_svc_dns_key="/sk8/init-service-dns"
 
   # Check to see if the init routine has already run on another node.
   name_of_init_node=$(etcdctl get --print-value-only "${init_svc_dns_key}") || \
@@ -3686,7 +3686,7 @@ apply_ccm() {
   info "configuring CCM"
 
   # Stores the name of the node that configures the cloud-provider.
-  init_ccm_key="/yakity/init-cloud-provider"
+  init_ccm_key="/sk8/init-cloud-provider"
 
   # Check to see if the init routine has already run on another node.
   name_of_init_node=$(etcdctl get --print-value-only "${init_ccm_key}") || \
@@ -3720,7 +3720,7 @@ apply_manifest() {
   info "applying ${op_name}"
 
   # Stores the name of the node that applies the manifest.
-  init_node_key="/yakity/apply-${op_name}"
+  init_node_key="/sk8/apply-${op_name}"
 
   # Check to see if the init routine has already run on another node.
   name_of_init_node=$(etcdctl get --print-value-only "${init_node_key}") || \
@@ -3837,7 +3837,7 @@ spec:
         emptyDir: {}
       containers:
       - name: run
-        image: gcr.io/kubernetes-conformance-testing/yake2e-job
+        image: gcr.io/kubernetes-conformance-testing/sk8e2e-job
         args:
         - run
         volumeMounts:
@@ -3854,7 +3854,7 @@ spec:
           mountPath: /var/log/kubernetes/e2e
           readOnly: false
       - name: tgz
-        image: gcr.io/kubernetes-conformance-testing/yake2e-job
+        image: gcr.io/kubernetes-conformance-testing/sk8e2e-job
         args:
         - tgz
         volumeMounts:
@@ -3869,7 +3869,7 @@ EOF
   chmod 0644 /var/lib/kubernetes/e2e-job.yaml
 
   # Stores the name of the init node.
-  init_node_key="/yakity/e2e"
+  init_node_key="/sk8/e2e"
 
   # Check to see if the init routine has already run on another node.
   name_of_init_node=$(etcdctl get --print-value-only "${init_node_key}") || \
@@ -4051,7 +4051,7 @@ create_pod_net_routes() {
 
   # Create and execute one or several commands to add routes to
   # pod networks on other nodes.
-  for r in $(etcdctl get /yakity/nodes \
+  for r in $(etcdctl get /sk8/nodes \
             --print-value-only --prefix | \
             jq -rs "${jqq}"); do
     debug "${r}"
@@ -4066,7 +4066,7 @@ create_pod_net_routes() {
 
 install_vcsim_service() {
   # Stores the name of the node on which vcsim is running.
-  init_vcsim_key="/yakity/init-vcsim"
+  init_vcsim_key="/sk8/init-vcsim"
 
   # Check to see if the init routine has already run on another node.
   name_of_init_node=$(etcdctl get --print-value-only "${init_vcsim_key}") || \
@@ -4229,7 +4229,7 @@ config_vcsim_service() {
 
   # Use jq to get all of the information about the nodes needed to create the
   # VMs in vcsim.
-  etcdctl get /yakity/nodes --sort-by=KEY --prefix --print-value-only | \
+  etcdctl get /sk8/nodes --sort-by=KEY --prefix --print-value-only | \
     jq -rs '.[] | "\(.host_name),\(.host_fqdn),\(.ipv4_address),\(.mac_address),\(.uuid),\(.serial)"' \
     >/var/lib/vcsim/vms
 
@@ -4908,7 +4908,7 @@ do_with_lock put_node_info || fatal "failed to put node info"
 
 # Waits until all nodes have stored their information in etcd.
 # After this step all node information should be available at
-# the key prefix '/yakity/nodes'.
+# the key prefix '/sk8/nodes'.
 wait_on_all_node_info || fatal "failed to wait on all node info"
 
 # Prints the information for each of the discovered nodes.

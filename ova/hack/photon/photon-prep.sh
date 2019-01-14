@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Yakity
+# simple-kubernetes-test-environment
 #
 # Copyright (c) 2018 VMware, Inc. All Rights Reserved.
 #
@@ -13,7 +13,7 @@
 # file.
 
 # The below commands are what are used to prep a vanilla PhotonOS2
-# installation in preparation to be processed by the yakity prep
+# installation in preparation to be processed by the sk8 prep
 # scripts.
 tdnf upgrade -y && \
 tdnf install -y gawk \

@@ -1,4 +1,4 @@
-# Yakity
+# simple-kubernetes-test-environment
 #
 # Copyright (c) 2018 VMware, Inc. All Rights Reserved.
 #
@@ -40,25 +40,25 @@ turn-down: turn-down-$(LINUX_DISTRO)
 %-1.vmdk: $(OVF_EXPORT_DIR)/%-1.vmdk
 	cp -f $? $@
 
-yakity-%.ovf: ovf/%.ovf ovf/product-section.ovf
+sk8-%.ovf: ovf/%.ovf ovf/product-section.ovf
 	@rm -f $@
 	cat $^ >>$@
 	printf '\n  </VirtualSystem>\n</Envelope>' >> $@
 
-yakity-%.ova:	yakity-%.ovf yakity-%-1.vmdk
+sk8-%.ova:	sk8-%.ovf sk8-%-1.vmdk
 	@rm -f $@
 	tar -cf $@ $^
 
 ova: build
-build: yakity-$(LINUX_DISTRO).ova
+build: sk8-$(LINUX_DISTRO).ova
 
 upload: upload-$(LINUX_DISTRO)
 
-upload-%: yakity-%.ova
+upload-%: sk8-%.ova
 	aws s3 cp $< s3://cnx.vmware/cicd/$< \
 	  --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers && \
 	  echo https://s3-us-west-2.amazonaws.com/cnx.vmware/cicd/$<
 
 .PHONY: prep seal turn-up turn-down upload
 
-.PRECIOUS: %-1.vmdk yakity-%.ovf
+.PRECIOUS: %-1.vmdk sk8-%.ovf
