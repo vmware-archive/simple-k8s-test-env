@@ -33,7 +33,7 @@ VMware vSphere using the sk8 OVA.
 16. Execute the remote access script locally. For example:
 
     ```shell
-    $ curl -sSL http://bit.ly/toepick | sh -s -- 4230384e-6392-e2c3-97cd-5dda6b4cfecf
+    $ curl -sSL http://bit.ly/sk8-local | sh -s -- 4230384e-6392-e2c3-97cd-5dda6b4cfecf
     getting cluster information
       * id                          success!
       * members                     success!

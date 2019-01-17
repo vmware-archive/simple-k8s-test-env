@@ -344,7 +344,7 @@ CLUSTER ID
 ${_cluster_id7}
 
 REMOTE ACCESS
-curl -sSL http://bit.ly/toepick | sh -s -- ${_vm_uuid}
+curl -sSL http://bit.ly/sk8-local | sh -s -- ${_vm_uuid}
 EOF
 }
 

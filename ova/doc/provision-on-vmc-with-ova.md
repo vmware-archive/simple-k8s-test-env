@@ -59,7 +59,7 @@ please see the guide [_Provision Kubernetes on vSphere with the sk8 OVA_](provis
     Once the jump host values are configured, please execute the access script:
 
     ```shell
-    $ curl -sSL http://bit.ly/toepick | sh -s -- 4230247a-8346-e622-6897-6466c6a583e3
+    $ curl -sSL http://bit.ly/sk8-local | sh -s -- 4230247a-8346-e622-6897-6466c6a583e3
     getting cluster information
     * id                          success!
     * members                     success!
