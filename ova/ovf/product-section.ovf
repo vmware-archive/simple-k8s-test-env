@@ -67,7 +67,7 @@ Control plane members on which workloads can be scheduled will use the memory al
         <Label>Password</Label>
         <Description>The password with which to connect to the vSphere host.</Description>
       </Property>
-      <Property ovf:userConfigurable="true" ovf:value="False" ovf:type="boolean" ovf:key="VSPHERE_SERVER_INSECURE">
+      <Property ovf:userConfigurable="true" ovf:value="True" ovf:type="boolean" ovf:key="VSPHERE_SERVER_INSECURE">
         <Label>Ignore TLS verification errors</Label>
         <Description>Ignores errors that occur when a peer TLS certificate cannot be verified.</Description>
       </Property>
