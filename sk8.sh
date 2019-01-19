@@ -1000,12 +1000,14 @@ EOF
   openssl req -config ssl.conf \
               -new \
               -key "${TLS_KEY_OUT}" \
+              -days "${TLS_DEFAULT_DAYS}" \
               -out csr.pem || \
     { error "failed to generate a csr"; return; }
 
   # Sign the CSR with the provided CA.
   openssl x509 -extfile ssl.conf \
                -extensions ext \
+               -days "${TLS_DEFAULT_DAYS}" \
                -req \
                -in csr.pem \
                -CA "${TLS_CA_CRT}" \

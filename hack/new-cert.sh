@@ -154,6 +154,7 @@ openssl genrsa -out key.pem "${TLS_DEFAULT_BITS}" || exit "${?}"
 openssl req -config ssl.conf \
             -new \
             -key key.pem \
+            -days "${TLS_DEFAULT_DAYS}" \
             -out csr.pem || exit "${?}"
 
 # Sign the CSR with the provided CA.
@@ -161,6 +162,7 @@ CA_CRT=$(abs_path "${TLS_CA_CRT}")
 CA_KEY=$(abs_path "${TLS_CA_KEY}")
 openssl x509 -extfile ssl.conf \
              -extensions ext \
+             -days "${TLS_DEFAULT_DAYS}" \
              -req \
              -in csr.pem \
              -CA "${CA_CRT}" \
