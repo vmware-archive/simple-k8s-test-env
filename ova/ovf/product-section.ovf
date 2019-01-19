@@ -71,6 +71,15 @@ Control plane members on which workloads can be scheduled will use the memory al
         <Label>Ignore TLS verification errors</Label>
         <Description>Ignores errors that occur when a peer TLS certificate cannot be verified.</Description>
       </Property>
+      <Category>Network</Category>
+      <Property ovf:qualifiers="MinLen(7)" ovf:userConfigurable="true" ovf:value="8.8.8.8" ovf:type="string" ovf:key="NETWORK_DNS_1">
+        <Label>DNS Server 1</Label>
+        <Description>The primary DNS server used for external name resolution.</Description>
+      </Property>
+      <Property ovf:qualifiers="MinLen(7)" ovf:userConfigurable="true" ovf:value="8.8.4.4" ovf:type="string" ovf:key="NETWORK_DNS_2">
+        <Label>DNS Server 2</Label>
+        <Description>The secondary DNS server used for external name resolution.</Description>
+      </Property>
       <Category>Cloud provider</Category>
       <Property ovf:qualifiers="ValueMap{&quot;None&quot;, &quot;In-tree&quot;, &quot;External&quot;}" ovf:userConfigurable="true" ovf:value="External" ovf:type="string" ovf:key="CLOUD_PROVIDER_TYPE">
         <Label>Type</Label>
