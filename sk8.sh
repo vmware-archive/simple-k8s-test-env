@@ -4776,6 +4776,23 @@ download_binaries() {
     download_cni_plugins     || { error "failed to download cni-plugns"; return; }
   fi
 
+  if [ "${NODE_TYPE}" = "worker" ]; then
+    # Remove all the control plane binaries from this worker node.
+    rm -f "${BIN_DIR}"/coredns \
+          "${BIN_DIR}"/etcd \
+          "${BIN_DIR}"/nginx
+  fi
+
+  if [ "${NODE_TYPE}" = "controller" ]; then
+    # Remove all the worker binaries from this control plane node.
+    rm -fr -- "${BIN_DIR}"/cni \
+              "${BIN_DIR}"/containerd* \
+              "${BIN_DIR}"/crictl \
+              "${BIN_DIR}"/ctr \
+              "${BIN_DIR}"/runc \
+              "${BIN_DIR}"/runsc
+  fi
+
   # Remove all of the potential tarballs created from downloading Kubernetes
   # from remote locations.
   rm -f -- "${KUBE_DOWNLOAD_DIR}"/*
