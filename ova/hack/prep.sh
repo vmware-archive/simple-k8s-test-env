@@ -23,7 +23,7 @@ case "${LINUX_DISTRO}" in
 photon)
   seal_script="${script_dir}/photon/photon-seal.sh"
   export GOVC_VM=${GOVC_VM:-/SDDC-Datacenter/vm/Workloads/sk8-photon}
-  SNAPSHOT_NAME=${SNAPSHOT_NAME:-bin}
+  SNAPSHOT_NAME=${SNAPSHOT_NAME:-bin2}
   ;;
 centos)
   seal_script="${script_dir}/centos/centos-seal.sh"
