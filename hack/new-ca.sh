@@ -40,8 +40,8 @@
 TLS_DEFAULT_BITS=${TLS_DEFAULT_BITS:-2048}
 
 # The number of days until the certificate expires. The default
-# value is 100 years.
-TLS_DEFAULT_DAYS=${TLS_DEFAULT_DAYS:-36500}
+# value is 10 years.
+TLS_DEFAULT_DAYS=${TLS_DEFAULT_DAYS:-3650}
 
 # The components that make up the certificate's distinguished name.
 TLS_COUNTRY_NAME=${TLS_COUNTRY_NAME:-US}
