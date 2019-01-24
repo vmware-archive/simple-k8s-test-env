@@ -1890,16 +1890,13 @@ resolve_via_coredns() {
   # Remove the symlink for system's resolv.conf
   rm -f /etc/resolv.conf /var/lib/coredns/resolv.conf
 
-  # Create a resolv.conf that points to the local CoreDNS server.
-  if [ "${NODE_TYPE}" = "worker" ]; then
-    i=1 && for e in ${CONTROLLER_IPV4_ADDRESSES}; do
-      [ "${i}" -gt "3" ] && break
-      echo "nameserver ${e}" >> /var/lib/coredns/resolv.conf
-      i=$((i+1))
-    done
-  else
-    echo "nameserver 127.0.0.1" >> /var/lib/coredns/resolv.conf
-  fi
+  # Create a resolv.conf that points to the CoreDNS server(s) running on
+  # the control plane node(s).
+  i=1 && for e in ${CONTROLLER_IPV4_ADDRESSES}; do
+    [ "${i}" -gt "3" ] && break
+    echo "nameserver ${e}" >> /var/lib/coredns/resolv.conf
+    i=$((i+1))
+  done
 
   # Add a search directive to the file.
   if [ -n "${NETWORK_DNS_SEARCH}" ]; then
