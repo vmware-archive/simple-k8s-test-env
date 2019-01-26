@@ -842,6 +842,104 @@ get_k8s_artifacts_url() {
   echo "${url}/${ver}" && return 0
 }
 
+# A basic regex pattern for matching a semantic version string.
+semverPatt='^\(v\{0,1\}\)\([[:digit:]]\{1,\}\)\{0,1\}\(.[[:digit:]]\{1,\}\)\{0,1\}\(.[[:digit:]]\{1,\}\)\{0,1\}\(.[[:digit:]]\{1,\}\)\{0,1\}\(.\{0,\}\)$'
+
+# Returns a successful exit code IFF the provided string is a semver.
+is_semver() {
+  echo "${1}" | grep -q "${semverPatt}"
+}
+
+# Extracts the MAJOR component of a semver.
+get_major() {
+  echo "${1}" | sed -e 's/'"${semverPatt}"'/\2/g'
+}
+# Extracts the MINOR component of a semver.
+get_minor() {
+  _v=$(echo "${1}" | sed -e 's/'"${semverPatt}"'/\3/g' | tr -d '.')
+  [ -n "${_v}" ] || _v=0; echo "${_v}"
+}
+# Extracts the PATCH component of a semver.
+get_patch() {
+  _v=$(echo "${1}" | sed -e 's/'"${semverPatt}"'/\4/g' | tr -d '.')
+  [ -n "${_v}" ] || _v=0; echo "${_v}"
+}
+# Extracts the BUILD component of a semver.
+get_build() {
+  _v=$(echo "${1}" | sed -e 's/'"${semverPatt}"'/\5/g' | tr -d '.')
+  [ -n "${_v}" ] || _v=0; echo "${_v}"
+}
+# Extracts the SUFFIX component of a semver.
+get_suffix() {
+  echo "${1}" | sed -e 's/'"${semverPatt}"'/\6/g'
+}
+# Extracts the MAJOR.MINOR.PATCH.BUILD portion of a semver.
+get_major_minor_patch_build() {
+  printf '%d.%d.%d.%d' \
+    "$(get_major "${1}")" \
+    "$(get_minor "${1}")" \
+    "$(get_patch "${1}")" \
+    "$(get_build "${1}")"
+}
+
+# Returns 0 if $1>$2
+version_gt() {
+  test "$(printf '%s\n' "${@}" | sort -V | head -n 1)" != "${1}"
+}
+
+# Compares two semantic version strings:
+#  -1 if a<b
+#   0 if a=b
+#   1 if a>b
+semver_comp() {
+  is_semver "${1}" || { echo "invalid semver: ${1}" 1>&2; return 1; }
+  is_semver "${2}" || { echo "invalid semver: ${2}" 1>&2; return 1; }
+
+  # Get the MAJOR.MINOR.PATCH.BUILD string for each version.
+  _a_mmpb="$(get_major_minor_patch_build "${1}")"
+  _b_mmpb="$(get_major_minor_patch_build "${2}")"
+
+  # Record whether or not the two MAJOR.MINOR.PATCH.BUILD are equal.
+  [ "${_a_mmpb}" = "${_b_mmpb}" ] && _a_eq_b=1
+
+  # Get the suffix components for each version.
+  _a_suffix="$(get_suffix "${1}")"
+  _b_suffix="$(get_suffix "${2}")"
+
+  # Reconstitute $1 and $2 as $_va and $_vb by filling in any
+  # components missing from the original semver values.
+  _va="${_a_mmpb}${_a_suffix}"
+  _vb="${_b_mmpb}${_b_suffix}"
+
+  # If the two reconstituted version strings are equal then the versions
+  # are equal.
+  if [ "${_va}" = "${_vb}" ]; then
+    _result=0
+
+  # If neither version have a suffix or if both versions have a suffix
+  # then the versions may be compared with sort -V.
+  elif { [ -z "${_a_suffix}" ] && [ -z "${_b_suffix}" ]; } || \
+     { [ -n "${_a_suffix}" ] && [ -n "${_b_suffix}" ]; }; then
+    { version_gt "${_va}" "${_vb}" && _result=1; } || _result=-1
+
+  # If $1 does not have a suffix and the two MAJOR.MINOR.PATCH.BUILD
+  # version strings are equal, then $1>$2.
+  elif [ -z "${_a_suffix}" ] && [ -n "${_a_eq_b}" ]; then
+    _result=1
+
+  # If $1 does have a suffix and the two MAJOR.MINOR.PATCH.BUILD
+  # version strings are equal, then $1<$2.
+  elif [ -n "${_a_suffix}" ] && [ -n "${_a_eq_b}" ]; then
+    _result=-1
+
+  # Otherwise compare the two versions using sort -V.
+  else
+    { version_gt "${_va}" "${_vb}" && _result=1; } || _result=-1
+  fi
+
+  echo "${_result}"
+}
+
 # Reverses an FQDN and substitutes slash characters for periods.
 # For example, k8s.vmware.ci becomes ci/vmware/k8s.
 reverse_fqdn() {
@@ -2237,8 +2335,30 @@ install_cloud_provider() {
   fi
 }
 
+################################################################################
+##                             K8S API Server                                 ##
+################################################################################
+
 install_kube_apiserver() {
   info "installing kube-apiserver"
+
+  # If deploying to 1.14 release or newer then the default admission plug-ins
+  # are different.
+  k8s_client_ver=$("${BIN_DIR}"/kubectl version \
+    --client --short | cut -c17-) || \
+    { error "failed to get kubectl client version"; return; }
+  info "kubernetes client version: ${k8s_client_ver}"
+
+  # Determine whether or not the version being deployed is greater than or
+  # equal to v1.14.0-alpha.1.
+  _ge_v1_14_alpha_1="$(semver_comp "${k8s_client_ver}" "v1.14.0-alpha.1")" || \
+    { error "failed to compare k8s semvers"; return; }
+
+  if [ "${_ge_v1_14_alpha_1}" -ge "0" ]; then
+    APISERVER_OPTS_ENABLE_ADMISSION_PLUGINS="${APISERVER_OPTS_ENABLE_ADMISSION_PLUGINS:-NamespaceLifecycle,NodeRestriction,LimitRanger,ServiceAccount,DefaultStorageClass,ResourceQuota}"
+  else
+    APISERVER_OPTS_ENABLE_ADMISSION_PLUGINS="${APISERVER_OPTS_ENABLE_ADMISSION_PLUGINS:-Initializers,NamespaceLifecycle,NodeRestriction,LimitRanger,ServiceAccount,DefaultStorageClass,ResourceQuota}"
+  fi
 
   cat <<EOF > /etc/default/kube-apiserver
 # Copied from http://bit.ly/2niZlvx
@@ -2253,7 +2373,7 @@ APISERVER_OPTS="--advertise-address=${IPV4_ADDRESS} \\
 --authorization-mode=Node,RBAC \\
 --bind-address=0.0.0.0${CLOUD_PROVIDER_OPTS} \\
 --client-ca-file='${TLS_CA_CRT}' \\
---enable-admission-plugins='Initializers,NamespaceLifecycle,NodeRestriction,LimitRanger,ServiceAccount,DefaultStorageClass,ResourceQuota' \\
+--enable-admission-plugins='${APISERVER_OPTS_ENABLE_ADMISSION_PLUGINS}' \\
 --enable-swagger-ui=true \\
 --etcd-cafile='${TLS_CA_CRT}' \\
 --etcd-certfile=/etc/ssl/etcd.crt \
