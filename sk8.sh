@@ -3948,9 +3948,9 @@ spec:
       - name: kubeconfig
         secret:
           secretName: kubeconfig
-      - name: e2e
+      - name: kubernetes
         hostPath:
-          path: /var/lib/kubernetes/e2e
+          path: /var/lib/kubernetes
           type: Directory
       - name: artifacts
         emptyDir: {}
@@ -3966,7 +3966,7 @@ spec:
         - name: kubeconfig
           mountPath: /etc/kubernetes
           readOnly: true
-        - name: e2e
+        - name: kubernetes
           mountPath: /var/lib/kubernetes
           readOnly: true
         - name: artifacts
@@ -4592,12 +4592,14 @@ download_jq() {
   debug "downloaded ${url}"
 }
 
+KUBE_TGZ="kubernetes.tar.gz"
 KUBE_CLIENT_TGZ="kubernetes-client-linux-amd64.tar.gz"
 KUBE_NODE_TGZ="kubernetes-node-linux-amd64.tar.gz"
 KUBE_SERVER_TGZ="kubernetes-server-linux-amd64.tar.gz"
 KUBE_TEST_TGZ="kubernetes-test.tar.gz"
 
 KUBE_DOWNLOAD_DIR=/var/lib/kubernetes/install/remote
+KUBE_DOWNLOAD="${KUBE_DOWNLOAD_DIR}/${KUBE_TGZ}"
 KUBE_DOWNLOAD_CLIENT="${KUBE_DOWNLOAD_DIR}/${KUBE_CLIENT_TGZ}"
 KUBE_DOWNLOAD_NODE="${KUBE_DOWNLOAD_DIR}/${KUBE_NODE_TGZ}"
 KUBE_DOWNLOAD_SERVER="${KUBE_DOWNLOAD_DIR}/${KUBE_SERVER_TGZ}"
@@ -4763,7 +4765,8 @@ download_kubernetes_server() {
 }
 
 download_kubernetes_test() {
-  if [ -e "/var/lib/kubernetes/platforms/linux/amd64/e2e.test" ]; then
+  if [ -e "/var/lib/kubernetes/version" ] && \
+     [ -e "/var/lib/kubernetes/platforms/linux/amd64/e2e.test" ]; then
     info "already downloaded kubernetes test"; return
   fi
 
@@ -4772,25 +4775,39 @@ download_kubernetes_test() {
   # If the Kubernetes artifact prefix begins with "file://" then the
   # bits to install Kubernetes are supposed to be available locally.
   if ! echo "${K8S_ARTIFACT_PREFIX}" | grep -q '^file://'; then
+    _k8s_download_dir="${KUBE_DOWNLOAD_DIR}"
+
     mkdir -p "${KUBE_DOWNLOAD_DIR}"
+
+    url="${K8S_ARTIFACT_PREFIX}/${KUBE_TGZ}"
+    http_ok "${url}" || { error "could not stat ${url}"; return; }
+    info "test: downloading ${url}"
+    ${CURL} -Lo "${KUBE_DOWNLOAD}" "${url}" || \
+      { error "failed to dowload ${url} to ${KUBE_DOWNLOAD}"; return ; }
+
     url="${K8S_ARTIFACT_PREFIX}/${KUBE_TEST_TGZ}"
     http_ok "${url}" || { error "could not stat ${url}"; return; }
     info "test: downloading ${url}"
     ${CURL} -Lo "${KUBE_DOWNLOAD_TEST}" "${url}" || \
       { error "failed to dowload ${url} to ${KUBE_DOWNLOAD_TEST}"; return ; }
-    _k8s_download_dir="${KUBE_DOWNLOAD_DIR}"
   else
     _k8s_download_dir="$(strip_file_uri "${K8S_ARTIFACT_PREFIX}")"
     info "test: using local bits ${_k8s_download_dir}"
   fi
 
-  _tarball=$(find_newest \
+  _tarball_kube=$(find_newest \
+    "${_k8s_download_dir}" gzip "${KUBE_TGZ}") || \
+    { error "failed to find test tarball"; return; }
+  tar xzvC "/var/lib" <"${_tarball_kube}" || \
+    { error "failed to inflate ${_tarball_kube}" "${exit_code}"; return; }
+  info "inflated ${_tarball_kube}"
+
+  _tarball_kube_test=$(find_newest \
     "${_k8s_download_dir}" gzip "${KUBE_TEST_TGZ}") || \
     { error "failed to find test tarball"; return; }
-
-  tar xzvC "/var/lib" <"${_tarball}" || \
-    { error "failed to inflate ${_tarball}" "${exit_code}"; return; }
-  info "inflated ${_tarball}"
+  tar xzvC "/var/lib" <"${_tarball_kube_test}" || \
+    { error "failed to inflate ${_tarball_kube_test}" "${exit_code}"; return; }
+  info "inflated ${_tarball_kube_test}"
 
   return 0
 }

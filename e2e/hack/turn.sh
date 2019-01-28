@@ -22,8 +22,8 @@ drun="${drun} -v "${xdir}/.terraform/plugins":/tf/.terraform/plugins"
 # available to Terraform's http provider.
 [ -f "${HOME}/.gist" ] && \
   drun="${drun} -v "${HOME}/.gist":/root/.gist:ro"
-[ -f "${xdir}/../sk8/sk8.sh" ] && \
-  drun="${drun} -v "${xdir}/../sk8/sk8.sh":/tmp/sk8.sh:ro"
+[ -f "${xdir}/../sk8.sh" ] && \
+  drun="${drun} -v "${xdir}/../sk8.sh":/tmp/sk8.sh:ro"
 
 # Find all the exported Terraform vars that are not usernames or passwords.
 for e in $(env | grep 'TF_VAR_'); do
@@ -68,6 +68,8 @@ case "${1}" in
     TF_VAR_wrk_count=${TF_VAR_wrk_count:-0}
     ;;
 esac
+
+echo "${drun}"
 
 # Run docker.
 ${drun} \
