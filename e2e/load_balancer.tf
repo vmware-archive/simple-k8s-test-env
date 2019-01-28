@@ -1,0 +1,3 @@
+locals {
+  external_fqdn = ""
+}

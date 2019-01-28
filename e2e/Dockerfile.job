@@ -1,0 +1,39 @@
+#
+# This image is meant to be scheduled as a pod or job on Kubernetes
+# clusters turned up with the tool https://github.com/akutz/yake2e.
+#
+# This image will only work if:
+#   1. The "kubectl" binary is available at "/usr/local/bin/kubectl"
+#   2. A "kubeconfig" file is available at "/etc/kubernetes/kubeconfig"
+#   3. The contents of "kubernetes-test.tar.gz" are inflated to
+#      "/var/lib"
+#
+FROM alpine:3.8
+LABEL "maintainer" "Andrew Kutz <akutz@vmware.com>"
+
+# Install the common dependencies.
+RUN apk --no-cache add ca-certificates curl tar
+
+# Clean up the alpine cache.
+RUN rm -rf /var/cache/apk/*
+
+# Link some musl so e2e.test doesn't die.
+RUN mkdir -p /lib64 && ln -s /lib/libc.musl-x86_64.so.1 /lib64/ld-linux-x86-64.so.2
+
+# Define and assign the working directory.
+RUN mkdir -p /var/lib/kubernetes
+WORKDIR /var/lib/kubernetes
+
+# Copy the script into the working directory.
+COPY e2e-job.sh /usr/local/bin/e2e.sh
+RUN chmod 0755 /usr/local/bin/e2e.sh
+
+# Copy the keepalive program into the working directory.
+COPY hack/keepalive/keepalive.linux_amd64 /usr/local/bin/keepalive
+RUN chmod 0755 /usr/local/bin/keepalive
+
+# Define the kubeconfig.
+ENV KUBECONFIG=/etc/kubernetes/kubeconfig
+
+# The entrypoing for this image is the e2e.sh script.
+ENTRYPOINT [ "/usr/local/bin/e2e.sh" ]

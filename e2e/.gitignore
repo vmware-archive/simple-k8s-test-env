@@ -1,0 +1,31 @@
+# Ignore the marker files.
+/.Dockerfile*
+
+# Ignore scratch files.
+/vprep.sh
+/scratch.txt
+/hack/*.tar.gz
+/hack/crio*
+/hack/Dockerfile*
+/hack/*.sh
+/hack/Makefile
+
+# Ignore the private TLS files
+*.crt
+*.key
+*.srl
+
+# Ignore the data directories and secure files
+/.terraform/
+/data
+/*/data
+/.terraform/
+/*.tfstate*
+/secure.auto.tfvars
+/secure.env
+/config.env
+
+# Ignore the hack dir
+/hack/Dockerfile*
+/hack/*.tar.gz
+/hack/Makefile
