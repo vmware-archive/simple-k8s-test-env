@@ -7,8 +7,6 @@ locals {
 
   vsphere_folder        = "${var.vsphere_folder}/${local.vm_path_prefix}/${local.name_sans_prefix}"
   vsphere_resource_pool = "${var.vsphere_resource_pool}/${local.vm_path_prefix}"
-
-  vsphere_resource_pools = ["${split("/", local.vsphere_resource_pool)}"]
 }
 
 data "vsphere_datacenter" "datacenter" {
@@ -22,14 +20,13 @@ resource "vsphere_folder" "folder" {
 }
 
 data "vsphere_resource_pool" "resource_pool" {
-  count         = "${length(local.vsphere_resource_pools)}"
-  name          = "${element(local.vsphere_resource_pools, count.index)}"
+  name          = "${local.vsphere_resource_pool}"
   datacenter_id = "${data.vsphere_datacenter.datacenter.id}"
 }
 
 resource "vsphere_resource_pool" "resource_pool" {
   name                    = "${local.name_sans_prefix}"
-  parent_resource_pool_id = "${element(data.vsphere_resource_pool.resource_pool.*.id, length(data.vsphere_resource_pool.resource_pool.*.id) - 1)}"
+  parent_resource_pool_id = "${data.vsphere_resource_pool.resource_pool.id}"
 }
 
 data "vsphere_datastore" "datastore" {

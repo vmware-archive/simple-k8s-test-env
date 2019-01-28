@@ -128,7 +128,7 @@ variable "vsphere_folder" {
 
 // The name of the resource pool to which VMs belong
 variable "vsphere_resource_pool" {
-  default = "Compute-ResourcePool/yake2e"
+  default = "*/Resources/Compute-ResourcePool/yake2e"
 }
 
 // The name of the datastore where VMs are located
