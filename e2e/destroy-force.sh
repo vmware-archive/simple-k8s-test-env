@@ -56,7 +56,7 @@ get_lb_arns() {
   get_arns_from_tag_descriptions \
     $(aws elbv2 describe-load-balancers | jq ".LoadBalancers | \
     map(select(any(.;.LoadBalancerName | \
-    startswith(\"yaklb\")))) | \
+    startswith(\"sk8lb\")))) | \
     .[] | \
     .LoadBalancerArn" | tr -d '"')
 }
@@ -67,7 +67,7 @@ get_lb_target_group_arns() {
   get_arns_from_tag_descriptions \
     $(aws elbv2 describe-target-groups | jq ".TargetGroups | \
     map(select(any(.;.TargetGroupName | \
-    startswith(\"yaklb\")))) | \
+    startswith(\"sk8lb\")))) | \
     .[] | \
     .TargetGroupArn" | tr -d '"')
 }
@@ -137,13 +137,13 @@ export GOVC_DEBUG=${GOVC_DEBUG:-false}
 export GOVC_DATACENTER=${GOVC_DATACENTER:-SDDC-Datacenter}
 
 # Define the parent folder to limit scope of the govc command.
-GOVC_ROOT_FOLDER=${GOVC_ROOT_FOLDER:-"/${GOVC_DATACENTER}/vm/Workloads/yake2e/${TYPE}"}
+GOVC_ROOT_FOLDER=${GOVC_ROOT_FOLDER:-"/${GOVC_DATACENTER}/vm/Workloads/sk8e2e/${TYPE}"}
 
 # Define the folder that contains the VMs.
 GOVC_VM_FOLDER=${GOVC_VM_FOLDER:-"${GOVC_ROOT_FOLDER}/${NAME}"}
 
 # Define the parent resource pool to limit scope of the govc command.
-GOVC_ROOT_RESOURCE_POOL=${GOVC_ROOT_RESOURCE_POOL:-"/${GOVC_DATACENTER}/host/Cluster-1/Resources/Compute-ResourcePool/yake2e/${TYPE}"}
+GOVC_ROOT_RESOURCE_POOL=${GOVC_ROOT_RESOURCE_POOL:-"/${GOVC_DATACENTER}/host/Cluster-1/Resources/Compute-ResourcePool/sk8e2e/${TYPE}"}
 
 # Define the parent resource pool to limit scope of the govc command
 # when querying resource pools that match a name.

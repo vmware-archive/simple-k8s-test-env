@@ -7,15 +7,15 @@ users:
 ${users}
 
 write_files:
-  - path: /etc/default/yakity
+  - path: /etc/default/sk8
     owner: root:root
     permissions: 0644
     encoding: gzip
     content: !!binary |
-      ${yakity_env}
+      ${sk8_env}
 
 runcmd:
   - mkdir -p /opt/bin
-  - curl -sSL -o /opt/bin/yakity.sh ${yakity_url}
-  - chmod 0755 /opt/bin/yakity.sh
-  - /opt/bin/yakity.sh ${node_type} 2>&1 | tee /var/log/yakity.log
+  - curl -sSL -o /opt/bin/sk8.sh ${sk8_url}
+  - chmod 0755 /opt/bin/sk8.sh
+  - /opt/bin/sk8.sh ${node_type} 2>&1 | tee /var/log/sk8.log

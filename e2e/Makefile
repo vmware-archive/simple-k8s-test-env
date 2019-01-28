@@ -1,7 +1,7 @@
 all: build
 
-E2E_IMAGE := gcr.io/kubernetes-conformance-testing/yake2e:latest
-E2E_JOB_IMAGE := gcr.io/kubernetes-conformance-testing/yake2e-job:latest
+E2E_IMAGE := gcr.io/kubernetes-conformance-testing/sk8e2e:latest
+E2E_JOB_IMAGE := gcr.io/kubernetes-conformance-testing/sk8e2e-job:latest
 
 DOCKER_BUILD := docker build
 ifeq (true,$(NOCACHE))

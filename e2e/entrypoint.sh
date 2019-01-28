@@ -7,7 +7,7 @@ set -o pipefail
 
 usage() {
   cat <<EOF 1>&2
-usage: yake2e NAME CMD [ARGS...]
+usage: sk8e2e NAME CMD [ARGS...]
 
 ARGS
 
@@ -170,23 +170,23 @@ if [ -z "${TF_VAR_tls_ca_crt}" ] || [ -z "${TF_VAR_tls_ca_key}" ]; then
   echo "one-time TLS CA generation enabled"
 fi
 
-# If no yakity URL is defined, there's a gist authentication file at
-# /root/.gist, and there's a yakity source at /tmp/yakity.sh, then upload
-# the yakity script to a gist so the local yakity script is consumeable
+# If no sk8 URL is defined, there's a gist authentication file at
+# /root/.gist, and there's a sk8 source at /tmp/sk8.sh, then upload
+# the sk8 script to a gist so the local sk8 script is consumeable
 # by Terraform's http provider.
-if [ -z "${TF_VAR_yakity_url}" ] && \
-   [ -f /root/.gist ] && [ -f /tmp/yakity.sh ]; then
+if [ -z "${TF_VAR_sk8_url}" ] && \
+   [ -f /root/.gist ] && [ -f /tmp/sk8.sh ]; then
 
-  # Check to see if an existing yakity gist can be updated.
-  if [ -f "data/.yakity.gist" ]; then
+  # Check to see if an existing sk8 gist can be updated.
+  if [ -f "data/.sk8.gist" ]; then
 
-    echo "updating an existing yakity gist"
+    echo "updating an existing sk8 gist"
 
     # Read the gist URL from the file or exit with an error.
-    gurl="$(cat data/.yakity.gist)" || fatal "failed to read data/.yakity.gist"
+    gurl="$(cat data/.sk8.gist)" || fatal "failed to read data/.sk8.gist"
 
     # If the file was empty then exist with an error.
-    [ -n "${gurl}" ] || fatal "data/.yakity.gist is empty" 1
+    [ -n "${gurl}" ] || fatal "data/.sk8.gist is empty" 1
 
     # If a gist ID can be parsed from the URL then use it to update
     # an existing gist instead of creating a new one.
@@ -194,25 +194,25 @@ if [ -z "${TF_VAR_yakity_url}" ] && \
       fatal "failed to parse gist ID from gist url ${gurl}"
     fi
 
-    gist -u "${gist_id}" /tmp/yakity.sh 1>/dev/null || 
-      fatal "failed to update existing yakity gist ${gurl}"
+    gist -u "${gist_id}" /tmp/sk8.sh 1>/dev/null || 
+      fatal "failed to update existing sk8 gist ${gurl}"
 
-  # There's no existing yakity gist, so one should be created.
+  # There's no existing sk8 gist, so one should be created.
   else
-    echo "create a new yakity gist"
+    echo "create a new sk8 gist"
 
-    # Create a new gist with data/yakity.sh
-    gurl=$(gist -pR /tmp/yakity.sh | tee data/.yakity.gist) || \
-      fatal "failed to uplooad yakity gist"
+    # Create a new gist with data/sk8.sh
+    gurl=$(gist -pR /tmp/sk8.sh | tee data/.sk8.gist) || \
+      fatal "failed to uplooad sk8 gist"
   fi
 
-  # Provide the yakity gist URL to Terraform.
+  # Provide the sk8 gist URL to Terraform.
   rgurl="$(echo "${gurl}" | \
     sed 's~gist.github.com~gist.githubusercontent.com~')" || \
     fatal "failed to transform gist URL ${gurl}"
 
-  export TF_VAR_yakity_url="${rgurl}/yakity.sh"
-  echo "using yakity gist ${TF_VAR_yakity_url}"
+  export TF_VAR_sk8_url="${rgurl}/sk8.sh"
+  echo "using sk8 gist ${TF_VAR_sk8_url}"
 fi
 
 # Make sure terraform has everything it needs.

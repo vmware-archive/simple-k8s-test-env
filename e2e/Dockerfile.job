@@ -1,6 +1,7 @@
 #
 # This image is meant to be scheduled as a pod or job on Kubernetes
-# clusters turned up with the tool https://github.com/akutz/yake2e.
+# clusters turned up with the tool
+# https://github.com/vmware/simple-k8s-test-env/tree/master/e2e.
 #
 # This image will only work if:
 #   1. The "kubectl" binary is available at "/usr/local/bin/kubectl"

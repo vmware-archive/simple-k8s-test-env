@@ -30,8 +30,8 @@ data "template_file" "wrk_pod_cidr" {
 //                             First Boot Env Vars                            //
 ////////////////////////////////////////////////////////////////////////////////
 
-// Written to /etc/default/yakity
-data "template_file" "yakity_env" {
+// Written to /etc/default/sk8
+data "template_file" "sk8_env" {
   count = "${var.ctl_count + var.wrk_count}"
 
   template = <<EOF

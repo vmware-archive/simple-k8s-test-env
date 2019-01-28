@@ -1,4 +1,4 @@
-# yake2e
+# sk8e2e
 This project provides a turn-key solution for running the Kubernetes 
 conformance tests on the VMware vSphere on VMC platform. In other words,
 it's **Y**et **A**nother **K**ubernetes **e2e** runner :)
@@ -30,7 +30,7 @@ $ docker run -it --rm \
   -v "$(pwd)/data":/tf/data \
   --env-file config.env \
   --env-file secure.env \
-  gcr.io/kubernetes-conformance-testing/yake2e \
+  gcr.io/kubernetes-conformance-testing/sk8e2e \
   stable up
 ```
 
@@ -38,7 +38,7 @@ $ docker run -it --rm \
 ```shell
 $ docker run -it --rm \
   -v "$(pwd)/data":/tf/data \
-  gcr.io/kubernetes-conformance-testing/yake2e \
+  gcr.io/kubernetes-conformance-testing/sk8e2e \
   stable test
 ```
 
@@ -46,7 +46,7 @@ $ docker run -it --rm \
 ```shell
 $ docker run -it --rm \
   -v "$(pwd)/data":/tf/data \
-  gcr.io/kubernetes-conformance-testing/yake2e \
+  gcr.io/kubernetes-conformance-testing/sk8e2e \
   stable tlog
 ```
 
@@ -56,7 +56,7 @@ $ docker run -it --rm \
   -v "$(pwd)/data":/tf/data \
   --env-file config.env \
   --env-file secure.env \
-  gcr.io/kubernetes-conformance-testing/yake2e \
+  gcr.io/kubernetes-conformance-testing/sk8e2e \
   stable down
 ```
 
@@ -72,7 +72,7 @@ $ docker run -it --rm \
   --env-file config.env \
   --env-file secure.env \
   --env TF_VAR_cloud_provider=external \
-  gcr.io/kubernetes-conformance-testing/yake2e \
+  gcr.io/kubernetes-conformance-testing/sk8e2e \
   stable up
 ```
 
@@ -85,7 +85,7 @@ and then download the test results as a tarball:
 ```shell
 $ docker run -it --rm \
   -v "$(pwd)/data":/tf/data \
-  gcr.io/kubernetes-conformance-testing/yake2e \
+  gcr.io/kubernetes-conformance-testing/sk8e2e \
   stable tget
 ```
 
@@ -96,7 +96,7 @@ to a GCS bucket:
 ```shell
 $ docker run -it --rm \
   -v "$(pwd)/data":/tf/data \
-  gcr.io/kubernetes-conformance-testing/yake2e \
+  gcr.io/kubernetes-conformance-testing/sk8e2e \
   stable tput gs://path-to-bucket google-cloud-key-file.json
 ```
 
@@ -106,6 +106,6 @@ The following command stops any in-progress e2e test job:
 ```shell
 $ docker run -it --rm \
   -v "$(pwd)/data":/tf/data \
-  gcr.io/kubernetes-conformance-testing/yake2e \
+  gcr.io/kubernetes-conformance-testing/sk8e2e \
   stable tdel
 ```

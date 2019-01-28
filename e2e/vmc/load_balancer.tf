@@ -9,7 +9,7 @@ variable "lb_vpc_id" {
 }
 
 resource "aws_lb" "lb" {
-  name_prefix        = "yaklb-"
+  name_prefix        = "sk8lb-"
   load_balancer_type = "network"
   internal           = false
   ip_address_type    = "ipv4"
@@ -54,7 +54,7 @@ resource "aws_lb_listener" "https" {
 }
 
 /*resource "aws_lb_target_group" "ssh" {
-  name_prefix = "yaklb-"
+  name_prefix = "sk8lb-"
   target_type = "ip"
   port        = "22"
   protocol    = "TCP"
@@ -70,7 +70,7 @@ resource "aws_lb_listener" "https" {
 }*/
 
 resource "aws_lb_target_group" "http" {
-  name_prefix = "yaklb-"
+  name_prefix = "sk8lb-"
   target_type = "ip"
   port        = "80"
   protocol    = "TCP"
@@ -86,7 +86,7 @@ resource "aws_lb_target_group" "http" {
 }
 
 resource "aws_lb_target_group" "https" {
-  name_prefix = "yaklb-"
+  name_prefix = "sk8lb-"
   target_type = "ip"
   port        = "${var.api_secure_port}"
   protocol    = "TCP"

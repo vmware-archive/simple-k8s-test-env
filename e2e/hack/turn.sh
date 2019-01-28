@@ -16,14 +16,14 @@ drun="docker run -it --rm -v "${xdir}/data":/tf/data"
 # container and saves time when launching new containers.
 drun="${drun} -v "${xdir}/.terraform/plugins":/tf/.terraform/plugins"
 
-# If GIST and YAKITY are both set to valid file paths then
-# mount GIST to /root/.gist and YAKITY to /tmp/yakity.sh
-# so the local yakity source may be uploaded to a gist and made 
+# If GIST and SK8 are both set to valid file paths then
+# mount GIST to /root/.gist and SK8 to /tmp/sk8.sh
+# so the local sk8 source may be uploaded to a gist and made 
 # available to Terraform's http provider.
 [ -f "${HOME}/.gist" ] && \
   drun="${drun} -v "${HOME}/.gist":/root/.gist:ro"
-[ -f "${xdir}/../yakity/yakity.sh" ] && \
-  drun="${drun} -v "${xdir}/../yakity/yakity.sh":/tmp/yakity.sh:ro"
+[ -f "${xdir}/../sk8/sk8.sh" ] && \
+  drun="${drun} -v "${xdir}/../sk8/sk8.sh":/tmp/sk8.sh:ro"
 
 # Find all the exported Terraform vars that are not usernames or passwords.
 for e in $(env | grep 'TF_VAR_'); do
@@ -74,5 +74,5 @@ ${drun} \
   -e TF_VAR_ctl_count=${TF_VAR_ctl_count} \
   -e TF_VAR_bth_count=${TF_VAR_bth_count} \
   -e TF_VAR_wrk_count=${TF_VAR_wrk_count} \
-  gcr.io/kubernetes-conformance-testing/yake2e \
+  gcr.io/kubernetes-conformance-testing/sk8e2e \
   "${@}"

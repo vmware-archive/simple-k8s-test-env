@@ -169,8 +169,8 @@ data "template_file" "ctl_cloud_config" {
     debug = "${var.debug}"
 
     //
-    yakity_env = "${base64gzip(data.template_file.yakity_env.*.rendered[count.index])}"
-    yakity_url = "${var.yakity_url}"
+    sk8_env = "${base64gzip(data.template_file.sk8_env.*.rendered[count.index])}"
+    sk8_url = "${var.sk8_url}"
 
     // If the count.index >= the number of controller nodes that are able to
     // schedule workloads then set the node_type="both".
@@ -232,8 +232,8 @@ data "template_file" "wrk_cloud_config" {
     debug = "${var.debug}"
 
     //
-    yakity_env = "${base64gzip(data.template_file.yakity_env.*.rendered[count.index])}"
-    yakity_url = "${var.yakity_url}"
+    sk8_env = "${base64gzip(data.template_file.sk8_env.*.rendered[count.index])}"
+    sk8_url = "${var.sk8_url}"
     node_type  = "worker"
 
     //

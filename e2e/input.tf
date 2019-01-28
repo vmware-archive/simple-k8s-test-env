@@ -12,7 +12,7 @@ variable "debug" {
   default = "false"
 }
 
-// Set the log level at which the yakity script is executed. Valid values
+// Set the log level at which the sk8 script is executed. Valid values
 // include: fatal, warn, error, info, debug.
 variable "log_level" {
   default = "info"
@@ -46,10 +46,10 @@ variable "os_seed_gid" {
   default = "1000"
 }
 
-// If var.yakity and var.yakity_file are not set then the script is fetched 
+// If var.sk8 and var.sk8_file are not set then the script is fetched 
 // from the following URL.
-variable "yakity_url" {
-  default = "https://raw.githubusercontent.com/akutz/yakity/v0.1.0/yakity.sh"
+variable "sk8_url" {
+  default = "https://raw.githubusercontent.com/akutz/sk8/v0.1.0/sk8.sh"
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -123,12 +123,12 @@ variable "vsphere_datacenter" {
 
 // The folder path where VMs are located
 variable "vsphere_folder" {
-  default = "Workloads/yake2e"
+  default = "Workloads/sk8e2e"
 }
 
 // The name of the resource pool to which VMs belong
 variable "vsphere_resource_pool" {
-  default = "*/Resources/Compute-ResourcePool/yake2e"
+  default = "*/Resources/Compute-ResourcePool/sk8e2e"
 }
 
 // The name of the datastore where VMs are located
@@ -248,8 +248,8 @@ variable "manifest_yaml_after_all" {
 }
 
 // The log_level variables set the log levels for the
-// various components deployed by yakity. All defaults
-// are controlled by yakity.
+// various components deployed by sk8. All defaults
+// are controlled by sk8.
 variable "log_level_kubernetes" {
   default = ""
 }
