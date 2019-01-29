@@ -73,6 +73,7 @@ echo "${drun}"
 
 # Run docker.
 ${drun} \
+  -e DEBUG="${DEBUG}" \
   -e TF_VAR_ctl_count=${TF_VAR_ctl_count} \
   -e TF_VAR_bth_count=${TF_VAR_bth_count} \
   -e TF_VAR_wrk_count=${TF_VAR_wrk_count} \

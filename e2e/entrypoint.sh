@@ -3,7 +3,8 @@
 # posix compliant
 # verified by https://www.shellcheck.net
 
-set -o pipefail
+set -e
+! /bin/sh -c 'set -o pipefail' >/dev/null 2>&1 || set -o pipefail
 
 usage() {
   cat <<EOF 1>&2
@@ -38,7 +39,7 @@ COMMANDS
     then all of the information is printed.
 
   test
-    Schedules the e2e conformance tests as a job.
+    Schedules the e2e conformance tests.
 
   tdel
     Delete the e2e conformance tests job.
@@ -75,6 +76,8 @@ COMMANDS
 EOF
 }
 
+[ -z "${DEBUG}" ] || set -x
+
 # Returns a success if the provided argument is a whole number.
 is_whole_num() { echo "${1}" | grep -q '^[[:digit:]]\{1,\}$'; }
 
@@ -95,6 +98,9 @@ fatal() {
 
 # Define how curl should be used.
 CURL="curl --retry 5 --retry-delay 1 --retry-max-time 120"
+
+# The e2e namespace
+E2E_NAMESPACE="sonobuoy"
 
 ################################################################################
 ##                                   main                                     ##
@@ -235,7 +241,7 @@ setup_kube() {
   # If there is a cached version of the artifact prefix then read it.
   if [ -f "data/${NAME}/artifactz" ]; then
 
-    echo "reading existing artifactz.txt"
+    #echo "reading existing artifactz.txt"
 
     # Get the kubertnetes artifact prefix from the file.
     kube_prefix=$(cat "data/${NAME}/artifactz") || \
@@ -264,53 +270,55 @@ setup_kube() {
   # The --kubeconfig flag is used instead of exporting KUBECONFIG because
   # this results in command lines that can be executed from the host as
   # well since all paths are relative.
-  KUBECTL="kubectl --kubeconfig "data/${NAME}/kubeconfig" -n e2e"
+  KUBECTL="$(command -v kubectl) --kubeconfig "data/${NAME}/kubeconfig" -n ${E2E_NAMESPACE}"
+
+  # Define an alias for the SONOBUOY program that includes the path to the
+  # kubeconfig file and targets the e2e namespace for all operations.
+  SONOBUOY="$(command -v sonobuoy) --kubeconfig "data/${NAME}/kubeconfig" -n ${E2E_NAMESPACE}"
 }
 
-get_test_pod_name() {
-  printf "getting the name of the e2e pod... "
+wait_for_test_resources() {
+  printf "waiting for e2e resources to come online..."
   i=0; while true; do
-    [ "${i}" -ge "100" ] && fatal "failed to get e2e pod" 1
-    pod_name=$(${KUBECTL} get pods --no-headers | awk '{print $1}')
+    [ "${i}" -ge "100" ] && fatal "timed out waiting for e2e resources" 1
+    pod_name=$(${KUBECTL} get pods --no-headers | \
+      grep 'e2e.\{0,\}Running' | awk '{print $1}')
     [ -n "${pod_name}" ] && echo "${pod_name}" && return 0
     printf "."
     sleep 3; i=$((i+1))
   done
 }
 
+get_e2e_pod_name() {
+  ${KUBECTL} get pods --no-headers | grep 'e2e.\{0,\}Running' | awk '{print $1}'
+}
+
 test_log() {
-  setup_kube; get_test_pod_name
-  echo "waiting for the log to have data"
-  i=0; while true; do
-    [ "${i}" -ge "100" ] && fatal "failed to get e2e log data" 1
-    if b1=$(${KUBECTL} logs --limit-bytes 1 "${pod_name}" run); then
-      [ -n "${b1}" ] && echo "${pod_name} has log data" && break
-    fi
-    printf "."
-    sleep 3; i=$((i+1))
-  done
-  echo "tailing e2e log"
-  i=0; while true; do
-    [ "${i}" -ge "100" ] && fatal "failed to tail e2e log" 1
-    ${KUBECTL} logs -f "${pod_name}" run && break
-    echo "."
-    sleep 3; i=$((i+1))
-  done
+  setup_kube
+  wait_for_test_resources
+  e2e_pod_name=$(get_e2e_pod_name)
+  echo "e2e pod name: ${e2e_pod_name}"
+  # shellcheck disable=SC2086
+  keepalive -- \
+    ${KUBECTL} logs -f -c e2e "${e2e_pod_name}" || \
+    fatal "failed to follow e2e logs"
 }
 
 test_get() {
-  setup_kube; get_test_pod_name
+  setup_kube
 
   E2E_RESULTS_DIR="${1:-data/${NAME}/e2e}"
+  mkdir -p "${E2E_RESULTS_DIR}"
 
-  ${KUBECTL} logs "${pod_name}" tgz | \
-    base64 -d >"data/${NAME}/e2e-results.tar.gz" || \
-    fatal "failed download the e2e test results"
+  ${SONOBUOY} retrieve "${E2E_RESULTS_DIR}" || \
+    fatal "failed to download the e2e test results"
   echo "downloaded the e2e test results"
 
-  mkdir -p "${E2E_RESULTS_DIR}"
-  tar xzf "data/${NAME}/e2e-results.tar.gz" -C "${E2E_RESULTS_DIR}" || \
-    fatal "failed to inflate the e2e test results"
+  tar xzf "${E2E_RESULTS_DIR}/"*.tar.gz -C "${E2E_RESULTS_DIR}" || \
+    fatal "failed to inflate e2e test results"
+
+  # Remove the e2e tarball once it has been inflated.
+  rm -f "${E2E_RESULTS_DIR}/"*.tar.gz
 
   echo "test results saved to ${E2E_RESULTS_DIR}"
 }
@@ -321,10 +329,11 @@ test_put() {
 
   GCS_PATH="${1}"; shift
   KEY_FILE="${1}"; shift
-  E2E_RESULTS_DIR="${1:-data/${NAME}/e2e}"; shift
+  E2E_RESULTS_DIR="${1:-data/${NAME}/e2e/plugins/e2e/results}"; shift
   
   # Ensure the key file exists.
   [ -f "${KEY_FILE}" ] || fatal "GCS key file ${KEY_FILE} does not exist" 1
+
 
   # Ensure the test results exist.
   [ -f "${E2E_RESULTS_DIR}/e2e.log" ] || fatal "missing test results" 1
@@ -340,51 +349,37 @@ test_put() {
 
 test_delete() {
   setup_kube
-  ${KUBECTL} delete jobs e2e || fatal "failed to delete e2e job"
+  ${SONOBUOY} delete || fatal "failed to delete e2e resources"
+}
+
+wait_for_test_resources() {
+  printf "waiting for e2e resources to come online..."
+  i=0; while true; do
+    [ "${i}" -ge "100" ] && fatal "timed out waiting for e2e resources" 1
+    pod_name=$(${KUBECTL} get pods --no-headers | \
+      grep 'e2e.\{0,\}Running' | awk '{print $1}')
+    [ -n "${pod_name}" ] && echo "${pod_name}" && return 0
+    printf "."
+    sleep 3; i=$((i+1))
+  done
+}
+
+test_status() {
+  setup_kube
+  wait_for_test_resources
+  ${SONOBUOY} status --show-all || fatal "failed to query e2e status"
 }
 
 test_start() {
   setup_kube
 
-  # If there's an e2e job spec in the data directy then use that.
-  #if [ -f "data/e2e-job.yaml" ]; then
-  #  echo "using e2e job spec from data/e2e-job.yaml"
-  #  cp "data/e2e-job.yaml" "data/${NAME}"
-  #fi
-
-  # If the e2e job spec is not cached then download it from the cluster.
-  if [ ! -f "data/${NAME}/e2e-job.yaml" ]; then
-    echo "downloading e2e job spec from http://${ext_fqdn}/e2e/job.yaml"
-    printf "waiting for e2e job spec to become available... "
-    i=0 && while true; do
-      [ "${i}" -ge 100 ] && fatal "timed out waiting for e2e job spec" 1
-      ${CURL} -I "http://${ext_fqdn}/e2e/job.yaml" | \
-        grep -qF 'HTTP/1.1 200 OK' && echo "ok" && break
-      printf "."
-      sleep 3
-      i=$((i+1))
-    done
-
-    ${CURL} "http://${ext_fqdn}/e2e/job.yaml" >"data/${NAME}/e2e-job.yaml" || \
-      fatal "failed to download e2e job spec"
-  fi
-
-  printf "waiting for e2e namespace... "
-  i=0 && while true; do
-    [ "${i}" -ge 100 ] && fatal "timed out waiting for e2e namespace" 1
-    kubectl --kubeconfig "data/${NAME}/kubeconfig" get namespaces | \
-      grep -q e2e && echo "ok" && break
-    printf "."
-    sleep 3
-    i=$((i+1))
-  done
-
   # Create the e2e job.
-  ${KUBECTL} create -f "data/${NAME}/e2e-job.yaml" || \
-    fatal "failed to create e2e job"
+  ${KUBECTL} create -f "sonobuoy.yaml" || fatal "failed to create e2e resources"
 
-  # Get the name of the pod created for the e2e job.
-  get_test_pod_name
+  wait_for_test_resources
+
+  # Print the status.
+  ${SONOBUOY} status --show-all || fatal "failed to query e2e status"
 }
 
 version() {
@@ -432,6 +427,9 @@ else
       ;;
     test)
       test_start
+      ;;
+    tsta)
+      test_status
       ;;
     tdel)
       test_delete
