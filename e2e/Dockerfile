@@ -29,6 +29,11 @@ ENV TF_ZIP=terraform_${TF_VERSION}_linux_amd64.zip
 ENV TF_URL=https://releases.hashicorp.com/terraform/${TF_VERSION}/${TF_ZIP}
 RUN curl -sSLO "${TF_URL}" && unzip "${TF_ZIP}" -d /usr/local/bin && rm -f "${TF_ZIP}"
 
+# Download the kubectl binary.
+RUN k8s_version="$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)" && \
+    curl -sSLo /usr/local/bin/kubectl "https://storage.googleapis.com/kubernetes-release/release/${k8s_version}/bin/linux/amd64/kubectl" && \
+    chmod 0755 /usr/local/bin/kubectl
+
 # Copy the keepalive program to /usr/local/bin.
 COPY hack/keepalive/keepalive.linux_amd64 /usr/local/bin/keepalive
 

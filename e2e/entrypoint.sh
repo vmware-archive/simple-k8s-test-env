@@ -99,9 +99,6 @@ fatal() {
 # Define how curl should be used.
 CURL="curl --retry 5 --retry-delay 1 --retry-max-time 120"
 
-# The e2e namespace
-E2E_NAMESPACE="sonobuoy"
-
 ################################################################################
 ##                                   main                                     ##
 ################################################################################
@@ -224,58 +221,40 @@ fi
 # Make sure terraform has everything it needs.
 terraform init
 
+# Ensure the data directory exists.
+mkdir -p "data/${NAME}"
+
 # Check to see if there is a previous etcd discovery URL value. If so, 
 # overwrite etcd.tf with that information.
 if disco=$(terraform output etcd 2>/dev/null) && [ -n "${disco}" ]; then
   printf 'locals {\n  etcd_discovery = "%s"\n}\n' "${disco}" >etcd.tf
 fi
 
-setup_kube() {
-  kube_dir="data/${NAME}/.kubernetes/linux_amd64"; mkdir -p "${kube_dir}"
-  export PATH="${kube_dir}:${PATH}"
+# The e2e namespace.
+if [ -f "data/${NAME}/namespace" ]; then
+  E2E_NAMESPACE="$(cat "data/${NAME}/namespace")"
+else
+  E2E_NAMESPACE="sk8e2e-$(date +%s | { md5sum 2>/dev/null || md5; } | awk '{print $1}' | cut -c-7)"
+  printf "%s" "${E2E_NAMESPACE}" >"data/${NAME}/namespace"
+fi
 
-  # Get the external FQDN of the cluster from the Terraform output cache.
-  ext_fqdn=$(terraform output external_fqdn) || \
-    fatal "failed to read external fqdn"
+# Define helpful means of executing kubectl and sonobuoy with the kubeconfig
+# and e2e namespace pre-configured.
+KUBECONFIG="data/${NAME}/kubeconfig"
+[ -f "${KUBECONFIG}" ] || unset KUBECONFIG
 
-  # If there is a cached version of the artifact prefix then read it.
-  if [ -f "data/${NAME}/artifactz" ]; then
+cat <<EOF >"data/${NAME}/kubectl"
+#!/bin/sh
+KUBECONFIG="${KUBECONFIG}" exec kubectl -n "${E2E_NAMESPACE}" "\${@}"
+EOF
+cat <<EOF >"data/${NAME}/sonobuoy"
+#!/bin/sh
+KUBECONFIG="${KUBECONFIG}" exec sonobuoy -n "${E2E_NAMESPACE}" "\${@}"
+EOF
+chmod 0755 "data/${NAME}/kubectl" "data/${NAME}/sonobuoy"
 
-    #echo "reading existing artifactz.txt"
-
-    # Get the kubertnetes artifact prefix from the file.
-    kube_prefix=$(cat "data/${NAME}/artifactz") || \
-      fatal "failed to read data/${NAME}/artifactz"
-
-  # The artifact prefix has not been cached, so cache it.
-  else
-    # Get the artifact prefix from the cluster.
-    kube_prefix=$(${CURL} "http://${ext_fqdn}/artifactz" | \
-      tee "data/${NAME}/artifactz") || \
-      fatal "failed to get k8s artifactz prefix"
-  fi
-
-  # If the kubectl program has not been cached then it needs to be downloaded.
-  if [ ! -f "${kube_dir}/kubectl" ]; then
-    ${CURL} -L "${kube_prefix}/kubernetes-client-linux-amd64.tar.gz" | \
-      tar xzC "${kube_dir}" --strip-components=3
-    exit_code="${?}" && \
-      [ "${exit_code}" -gt "1" ] && \
-      fatal "failed to download kubectl" "${exit_code}"
-  fi
-
-  # Define an alias for the kubectl program that includes the path to the
-  # kubeconfig file and targets the e2e namespace for all operations.
-  #
-  # The --kubeconfig flag is used instead of exporting KUBECONFIG because
-  # this results in command lines that can be executed from the host as
-  # well since all paths are relative.
-  KUBECTL="$(command -v kubectl) --kubeconfig "data/${NAME}/kubeconfig" -n ${E2E_NAMESPACE}"
-
-  # Define an alias for the SONOBUOY program that includes the path to the
-  # kubeconfig file and targets the e2e namespace for all operations.
-  SONOBUOY="$(command -v sonobuoy) --kubeconfig "data/${NAME}/kubeconfig" -n ${E2E_NAMESPACE}"
-}
+KUBECTL="data/${NAME}/kubectl"
+SONOBUOY="data/${NAME}/sonobuoy"
 
 wait_for_test_resources() {
   printf "waiting for e2e resources to come online..."
@@ -294,7 +273,6 @@ get_e2e_pod_name() {
 }
 
 test_log() {
-  setup_kube
   if ${SONOBUOY} status 2>&1 | grep -iq 'e2e[[:space:]]\{0,\}complete'; then
     ${SONOBUOY} logs || true
     return
@@ -317,8 +295,6 @@ test_log() {
 }
 
 test_get() {
-  setup_kube
-
   printf "waiting for e2e test(s) to complete..."
   i=0; while true; do
     [ "${i}" -ge "100" ] && fatal "timed out waiting for e2e test(s) to complete" 1
@@ -375,26 +351,23 @@ test_put() {
 }
 
 test_delete() {
-  setup_kube
   ${SONOBUOY} delete || fatal "failed to delete e2e resources"
 }
 
 test_status() {
-  setup_kube
   ${SONOBUOY} status 2>&1 | grep -iq 'e2e[[:space:]]\{0,\}complete' || \
     wait_for_test_resources
   ${SONOBUOY} status --show-all || fatal "failed to query e2e status"
 }
 
 test_start() {
-  setup_kube
-
   KUBE_CONFORMANCE_IMAGE="${KUBE_CONFORMANCE_IMAGE:-gcr.io/heptio-images/kube-conformance:latest}"
   E2E_FOCUS="${E2E_FOCUS:-\\\[Conformance\\\]}"
   E2E_SKIP="${E2E_SKIP:-Alpha|\\\[(Disruptive|Feature:[^\\\]]+|Flaky)\\\]}"
 
   sed -e 's~{{E2E_FOCUS}}~'"${E2E_FOCUS}"'~g' \
       -e 's~{{E2E_SKIP}}~'"${E2E_SKIP}"'~g' \
+      -e 's~{{NAMESPACE}}~'"${E2E_NAMESPACE}"'~g' \
       -e 's~{{KUBE_CONFORMANCE_IMAGE}}~'"${KUBE_CONFORMANCE_IMAGE}"'~g' \
       >"data/${NAME}/sonobuoy.yaml" <sonobuoy.yaml
 
@@ -408,8 +381,12 @@ test_start() {
   ${SONOBUOY} status --show-all || fatal "failed to query e2e status"
 }
 
-version() {
-  kubectl --kubeconfig "data/${NAME}/kubeconfig" version || true
+print_version() {
+  if [ -f "${KUBECONFIG}" ]; then
+    ${KUBECTL} version || true
+  else
+    ${KUBECTL} version --client || true
+  fi
 }
 
 turn_up() {
@@ -470,10 +447,10 @@ else
       test_put "${@}"
       ;;
     version)
-      version
+      print_version
       ;;
-    sh)
-      exec /bin/sh
+    sh|bash|shell)
+      exec /bin/bash
       ;;
     *)
       echo2 "invalid command"; usage; exit 1
