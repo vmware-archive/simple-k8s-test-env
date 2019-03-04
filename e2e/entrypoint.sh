@@ -295,13 +295,25 @@ get_e2e_pod_name() {
 
 test_log() {
   setup_kube
+  if ${SONOBUOY} status 2>&1 | grep -iq 'e2e[[:space:]]\{0,\}complete'; then
+    ${SONOBUOY} logs || true
+    return
+  fi
   wait_for_test_resources
-  e2e_pod_name=$(get_e2e_pod_name)
+  if ! e2e_pod_name=$(get_e2e_pod_name) || [ -z "${e2e_pod_name}" ]; then
+    if ${SONOBUOY} status 2>&1 | grep -iq 'e2e[[:space:]]\{0,\}complete'; then
+      ${SONOBUOY} logs || true
+      return
+    fi
+  fi
   echo "e2e pod name: ${e2e_pod_name}"
   # shellcheck disable=SC2086
-  keepalive -- \
-    ${KUBECTL} logs -f -c e2e "${e2e_pod_name}" || \
-    fatal "failed to follow e2e logs"
+  if ! keepalive -- ${KUBECTL} logs -f -c e2e "${e2e_pod_name}"; then
+    if ${SONOBUOY} status 2>&1 | grep -iq 'e2e[[:space:]]\{0,\}complete'; then
+      ${SONOBUOY} logs || true
+      return
+    fi
+  fi
 }
 
 test_get() {
@@ -329,11 +341,10 @@ test_put() {
 
   GCS_PATH="${1}"; shift
   KEY_FILE="${1}"; shift
-  E2E_RESULTS_DIR="${1:-data/${NAME}/e2e/plugins/e2e/results}"; shift
-  
+  E2E_RESULTS_DIR="${1:-data/${NAME}/e2e/plugins/e2e/results}"
+
   # Ensure the key file exists.
   [ -f "${KEY_FILE}" ] || fatal "GCS key file ${KEY_FILE} does not exist" 1
-
 
   # Ensure the test results exist.
   [ -f "${E2E_RESULTS_DIR}/e2e.log" ] || fatal "missing test results" 1
@@ -352,29 +363,28 @@ test_delete() {
   ${SONOBUOY} delete || fatal "failed to delete e2e resources"
 }
 
-wait_for_test_resources() {
-  printf "waiting for e2e resources to come online..."
-  i=0; while true; do
-    [ "${i}" -ge "100" ] && fatal "timed out waiting for e2e resources" 1
-    pod_name=$(${KUBECTL} get pods --no-headers | \
-      grep 'e2e.\{0,\}Running' | awk '{print $1}')
-    [ -n "${pod_name}" ] && echo "${pod_name}" && return 0
-    printf "."
-    sleep 3; i=$((i+1))
-  done
-}
-
 test_status() {
   setup_kube
-  wait_for_test_resources
+  ${SONOBUOY} status 2>&1 | grep -iq 'e2e[[:space:]]\{0,\}complete' || \
+    wait_for_test_resources
   ${SONOBUOY} status --show-all || fatal "failed to query e2e status"
 }
 
 test_start() {
   setup_kube
 
+  KUBE_CONFORMANCE_IMAGE="${KUBE_CONFORMANCE_IMAGE:-gcr.io/heptio-images/kube-conformance:latest}"
+  E2E_FOCUS="${E2E_FOCUS:-\\\[Conformance\\\]}"
+  E2E_SKIP="${E2E_SKIP:-Alpha|\\\[(Disruptive|Feature:[^\\\]]+|Flaky)\\\]}"
+
+  sed -e 's~{{E2E_FOCUS}}~'"${E2E_FOCUS}"'~g' \
+      -e 's~{{E2E_SKIP}}~'"${E2E_SKIP}"'~g' \
+      -e 's~{{KUBE_CONFORMANCE_IMAGE}}~'"${KUBE_CONFORMANCE_IMAGE}"'~g' \
+      >"data/${NAME}/sonobuoy.yaml" <sonobuoy.yaml
+
   # Create the e2e job.
-  ${KUBECTL} create -f "sonobuoy.yaml" || fatal "failed to create e2e resources"
+  ${KUBECTL} create -f "data/${NAME}/sonobuoy.yaml" || \
+    fatal "failed to create e2e resources"
 
   wait_for_test_resources
 
