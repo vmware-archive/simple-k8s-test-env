@@ -2354,10 +2354,19 @@ install_kube_apiserver() {
   _ge_v1_14_alpha_1="$(semver_comp "${k8s_client_ver}" "v1.14.0-alpha.1")" || \
     { error "failed to compare k8s semvers"; return; }
 
+  # Determine whether or not the version being deployed is greater than or
+  # equal to v1.15.0-alpha.0.
+  _ge_v1_15_alpha_0="$(semver_comp "${k8s_client_ver}" "v1.15.0-alpha.0")" || \
+    { error "failed to compare k8s semvers"; return; }
+
   if [ "${_ge_v1_14_alpha_1}" -ge "0" ]; then
     APISERVER_OPTS_ENABLE_ADMISSION_PLUGINS="${APISERVER_OPTS_ENABLE_ADMISSION_PLUGINS:-NamespaceLifecycle,NodeRestriction,LimitRanger,ServiceAccount,DefaultStorageClass,ResourceQuota}"
   else
     APISERVER_OPTS_ENABLE_ADMISSION_PLUGINS="${APISERVER_OPTS_ENABLE_ADMISSION_PLUGINS:-Initializers,NamespaceLifecycle,NodeRestriction,LimitRanger,ServiceAccount,DefaultStorageClass,ResourceQuota}"
+  fi
+
+  if [ "${_ge_v1_15_alpha_0}" -ge "0" ]; then
+    REQUESTHEADER_CLIENT_CA_FILE="--requestheader-client-ca-file='${TLS_CA_CRT}'"
   fi
 
   cat <<EOF > /etc/default/kube-apiserver
@@ -2385,7 +2394,7 @@ APISERVER_OPTS="--advertise-address=${IPV4_ADDRESS} \\
 --kubelet-client-certificate=/etc/ssl/kube-apiserver.crt \\
 --kubelet-client-key=/etc/ssl/kube-apiserver.key \\
 --kubelet-https=true \\
---runtime-config=api/all \\
+--runtime-config=api/all ${REQUESTHEADER_CLIENT_CA_FILE} \\
 --secure-port=${SECURE_PORT} \\
 --service-account-key-file=/etc/ssl/k8s-service-accounts.key \\
 --service-cluster-ip-range='${SERVICE_CIDR}' \\

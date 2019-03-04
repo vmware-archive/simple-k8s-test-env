@@ -1,10 +1,10 @@
-FROM bitnami/minideb:jessie
+FROM debian:stretch-20190204-slim
 LABEL "maintainer" "Andrew Kutz <akutz@vmware.com>"
 
 # Update the CA certificates and clean up the apt cache.
-RUN apt-get update && \
+RUN apt-get -y update && \
     apt-get -y --no-install-recommends install \
-    ca-certificates curl locales ruby tar unzip && \
+    ca-certificates curl locales python ruby tar unzip && \
     rm -rf /var/cache/apt/* /var/lib/apt/lists/*
 
 # Set the locale so that the gist command is happy.
@@ -17,6 +17,7 @@ RUN gem install gist
 # Download the Google Cloud SDK
 RUN curl -sSL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-217.0.0-linux-x86_64.tar.gz | \
     tar xzC /
+RUN /google-cloud-sdk/bin/gcloud components update
 
 # Download Sonobuoy
 RUN curl -sSL https://github.com/heptio/sonobuoy/releases/download/v0.13.0/sonobuoy_0.13.0_linux_amd64.tar.gz | \

@@ -86,13 +86,15 @@ data:
     spec:
       env:
       - name: E2E_FOCUS
-        value: '\[Conformance\]'
+        value: '{{E2E_FOCUS}}'
       - name: E2E_SKIP
-        value: 'Alpha|\[(Disruptive|Feature:[^\]]+|Flaky)\]'
+        value: '{{E2E_SKIP}}'
       - name: E2E_PARALLEL
         value: '1'
+      - name: E2E_PROVIDER
+        value: 'skeleton'
       command: ["/run_e2e.sh"]
-      image: gcr.io/heptio-images/kube-conformance:latest
+      image: {{KUBE_CONFORMANCE_IMAGE}}
       imagePullPolicy: Always
       name: e2e
       volumeMounts:

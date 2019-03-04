@@ -6,7 +6,7 @@ hackd=$(python -c "import os; print(os.path.realpath('$(dirname "${0}")'))")
 xdir="${hackd}/.."
 
 # Make sure the docker image is up to date.
-make -C "${xdir}" build
+#make -C "${xdir}" image
 
 # Build the docker run command line.
 drun="docker run -it --rm -v "${xdir}/data":/tf/data"
@@ -74,6 +74,9 @@ echo "${drun}"
 # Run docker.
 ${drun} \
   -e DEBUG="${DEBUG}" \
+  -e E2E_FOCUS="${E2E_FOCUS-}" \
+  -e E2E_SKIP="${E2E_SKIP-}" \
+  -e KUBE_CONFORMANCE_IMAGE="${KUBE_CONFORMANCE_IMAGE-}" \
   -e TF_VAR_ctl_count=${TF_VAR_ctl_count} \
   -e TF_VAR_bth_count=${TF_VAR_bth_count} \
   -e TF_VAR_wrk_count=${TF_VAR_wrk_count} \
