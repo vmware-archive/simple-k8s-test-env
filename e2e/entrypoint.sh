@@ -319,12 +319,28 @@ test_log() {
 test_get() {
   setup_kube
 
+  printf "waiting for e2e test(s) to complete..."
+  i=0; while true; do
+    [ "${i}" -ge "100" ] && fatal "timed out waiting for e2e test(s) to complete" 1
+    if ${SONOBUOY} status 2>&1 | grep -iq 'e2e[[:space:]]\{0,\}complete'; then
+      echo "success"; break
+    fi
+    printf "."
+    sleep 3; i=$((i+1))
+  done
+
   E2E_RESULTS_DIR="${1:-data/${NAME}/e2e}"
   mkdir -p "${E2E_RESULTS_DIR}"
 
-  ${SONOBUOY} retrieve "${E2E_RESULTS_DIR}" || \
-    fatal "failed to download the e2e test results"
-  echo "downloaded the e2e test results"
+  printf "downloading e2e test results..."
+  i=0; while true; do
+    [ "${i}" -ge "100" ] && fatal "timed out downloading e2e test results" 1
+    if ${SONOBUOY} retrieve "${E2E_RESULTS_DIR}"; then
+      echo "success"; break
+    fi
+    printf "."
+    sleep 3; i=$((i+1))
+  done
 
   tar xzf "${E2E_RESULTS_DIR}/"*.tar.gz -C "${E2E_RESULTS_DIR}" || \
     fatal "failed to inflate e2e test results"
