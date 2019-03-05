@@ -2365,13 +2365,25 @@ install_kube_apiserver() {
     APISERVER_OPTS_ENABLE_ADMISSION_PLUGINS="${APISERVER_OPTS_ENABLE_ADMISSION_PLUGINS:-Initializers,NamespaceLifecycle,NodeRestriction,LimitRanger,ServiceAccount,DefaultStorageClass,ResourceQuota}"
   fi
 
+  # Please see http://bit.ly/2tM4DDg for information on configuring the
+  # aggregation layer.
   if [ "${_ge_v1_15_alpha_0}" -ge "0" ]; then
-    REQUESTHEADER_CLIENT_CA_FILE="--requestheader-client-ca-file='${TLS_CA_CRT}'"
+    AGGREGATION_LAYER_OPTS="$(cat <<EOF
+--requestheader-client-ca-file='${TLS_CA_CRT}' \
+--requestheader-allowed-names=front-proxy-client \
+--requestheader-extra-headers-prefix=X-Remote-Extra- \
+--requestheader-group-headers=X-Remote-Group \
+--requestheader-username-headers=X-Remote-User \
+--proxy-client-cert-file=/etc/ssl/kube-agg-proxy.crt \
+--proxy-client-key-file=/etc/ssl/kube-agg-proxy.key
+EOF
+)"
+    if [ "${NODE_TYPE}" = "controller" ]; then
+      AGGREGATION_LAYER_OPTS="${AGGREGATION_LAYER_OPTS} --enable-aggregator-routing=true"
+    fi
   fi
 
-  cat <<EOF > /etc/default/kube-apiserver
-# Copied from http://bit.ly/2niZlvx
-
+  cat <<EOF >/etc/default/kube-apiserver
 APISERVER_OPTS="--advertise-address=${IPV4_ADDRESS} \\
 --allow-privileged=true \\
 --apiserver-count=${NUM_CONTROLLERS} \\
@@ -2380,7 +2392,8 @@ APISERVER_OPTS="--advertise-address=${IPV4_ADDRESS} \\
 --audit-log-maxsize=100 \\
 --audit-log-path=/var/log/audit.log \\
 --authorization-mode=Node,RBAC \\
---bind-address=0.0.0.0${CLOUD_PROVIDER_OPTS} \\
+--bind-address=0.0.0.0 \\
+${CLOUD_PROVIDER_OPTS} \\
 --client-ca-file='${TLS_CA_CRT}' \\
 --enable-admission-plugins='${APISERVER_OPTS_ENABLE_ADMISSION_PLUGINS}' \\
 --enable-swagger-ui=true \\
@@ -2394,13 +2407,14 @@ APISERVER_OPTS="--advertise-address=${IPV4_ADDRESS} \\
 --kubelet-client-certificate=/etc/ssl/kube-apiserver.crt \\
 --kubelet-client-key=/etc/ssl/kube-apiserver.key \\
 --kubelet-https=true \\
---runtime-config=api/all ${REQUESTHEADER_CLIENT_CA_FILE} \\
+--runtime-config=api/all \\
 --secure-port=${SECURE_PORT} \\
 --service-account-key-file=/etc/ssl/k8s-service-accounts.key \\
 --service-cluster-ip-range='${SERVICE_CIDR}' \\
 --service-node-port-range=30000-32767 \\
 --tls-cert-file=/etc/ssl/kube-apiserver.crt \\
 --tls-private-key-file=/etc/ssl/kube-apiserver.key \\
+${AGGREGATION_LAYER_OPTS} \\
 --v=${LOG_LEVEL_KUBE_APISERVER}"
 EOF
 
@@ -2686,6 +2700,8 @@ generate_or_fetch_shared_kubernetes_assets() {
   shared_tls_svc_accts_key_key="${shared_tls_prefix}/service-accounts.key"
   shared_tls_kube_proxy_crt_key="${shared_tls_prefix}/kube-proxy.crt"
   shared_tls_kube_proxy_key_key="${shared_tls_prefix}/kube-proxy.key"
+  shared_tls_agg_proxy_crt_key="${shared_tls_prefix}/kube-agg-proxy.crt"
+  shared_tls_agg_proxy_key_key="${shared_tls_prefix}/kube-agg-proxy.key"
 
   # The key for the encryption key.
   shared_enc_key_key="${shared_assets_prefix}/encryption.key"
@@ -2755,6 +2771,13 @@ generate_or_fetch_shared_kubernetes_assets() {
       etcdctl get "${shared_enc_key_key}" --print-value-only > \
         /var/lib/kubernetes/encryption-config.yaml || \
         { error "failed to fetch shared encryption key"; return; }
+
+      debug "fetching shared kube-agg-proxy cert/key pair"
+      fetch_tls "${shared_tls_agg_proxy_crt_key}" \
+                "${shared_tls_agg_proxy_key_key}" \
+                /etc/ssl/kube-agg-proxy.crt \
+                /etc/ssl/kube-agg-proxy.key || \
+        { error "failed to fetch shared kube-agg-proxy cert/key pair"; return; }
     fi
 
     # Fetch shared worker assets.
@@ -2890,6 +2913,13 @@ generate_or_fetch_shared_kubernetes_assets() {
     new_kubeconfig) || \
     { error "failed to generate shared kube-proxy kubeconfig"; return; }
 
+  debug "generating shared kube-agg-proxy x509 cert/key pair"
+  (TLS_KEY_OUT=/etc/ssl/kube-agg-proxy.key \
+    TLS_CRT_OUT=/etc/ssl/kube-agg-proxy.crt \
+    TLS_COMMON_NAME="front-proxy-client" \
+    new_cert) || \
+    { error "failed to generate shared kube-agg-proxy x509 cert/key pair"; return; }
+
   debug "generating shared encryption-config"
   cat <<EOF >/var/lib/kubernetes/encryption-config.yaml
 kind: EncryptionConfig
@@ -2912,6 +2942,8 @@ EOF
   put_file "${shared_tls_svc_accts_key_key}"  /etc/ssl/k8s-service-accounts.key || return
   put_file "${shared_tls_kube_proxy_crt_key}" /etc/ssl/kube-proxy.crt || return
   put_file "${shared_tls_kube_proxy_key_key}" /etc/ssl/kube-proxy.key || return
+  put_file "${shared_tls_agg_proxy_crt_key}" /etc/ssl/kube-agg-proxy.crt || return
+  put_file "${shared_tls_agg_proxy_key_key}" /etc/ssl/kube-agg-proxy.key || return
 
   # Store the kubeconfigs on the etcd server.
   put_file "${shared_kfg_admin_key}"              /var/lib/kubernetes/kubeconfig || return
@@ -2934,6 +2966,7 @@ EOF
     rm -fr /var/lib/kube-scheduler
     rm -f  /var/lib/kubernetes/kubeconfig
     rm -f  /var/lib/kubernetes/encryption-config.yaml
+    rm -f  /etc/ssl/kube-agg-proxy.*
   fi
   rm -f /var/lib/kubernetes/public.kubeconfig
   rm -f /etc/ssl/k8s-admin.*
