@@ -4,6 +4,10 @@
 // other files in this directory.
 //
 
+variable "data_dir" {
+  default = ""
+}
+
 variable "name" {
   default = ""
 }

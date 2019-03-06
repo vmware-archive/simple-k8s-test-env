@@ -8,7 +8,7 @@ variable "lb_vpc_id" {
   default = "vpc-8f7048f6"
 }
 
-resource "aws_lb" "lb" {
+/*resource "aws_lb" "lb" {
   name_prefix        = "sk8lb-"
   load_balancer_type = "network"
   internal           = false
@@ -18,10 +18,21 @@ resource "aws_lb" "lb" {
   tags {
     Cluster = "${var.name}"
   }
+}*/
+
+// The ARN of the existing load balancer to which the listeners 
+// will be attached.
+variable "lb_arn" {
+  default = ""
+}
+
+// The DNS name of the existing load balancer.
+variable "lb_dns" {
+  default = ""
 }
 
 /*resource "aws_lb_listener" "ssh" {
-  load_balancer_arn = "${aws_lb.lb.arn}"
+  load_balancer_arn = "${var.lb_arn}"
   port              = "22"
   protocol          = "TCP"
 
@@ -32,7 +43,7 @@ resource "aws_lb" "lb" {
 }*/
 
 resource "aws_lb_listener" "http" {
-  load_balancer_arn = "${aws_lb.lb.arn}"
+  load_balancer_arn = "${var.lb_arn}"
   port              = "80"
   protocol          = "TCP"
 
@@ -43,7 +54,7 @@ resource "aws_lb_listener" "http" {
 }
 
 resource "aws_lb_listener" "https" {
-  load_balancer_arn = "${aws_lb.lb.arn}"
+  load_balancer_arn = "${var.lb_arn}"
   port              = "443"
   protocol          = "TCP"
 
@@ -126,6 +137,6 @@ resource "aws_lb_target_group_attachment" "https" {
 }
 
 locals {
-  external_fqdn = "${aws_lb.lb.dns_name}"
+  external_fqdn = "${var.lb_dns}"
 }
 
