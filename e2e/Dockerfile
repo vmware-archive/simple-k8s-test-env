@@ -4,20 +4,26 @@ LABEL "maintainer" "Andrew Kutz <akutz@vmware.com>"
 # Update the CA certificates and clean up the apt cache.
 RUN apt-get -y update && \
     apt-get -y --no-install-recommends install \
-    ca-certificates curl locales python ruby tar unzip && \
+    ca-certificates curl jq locales python3 ruby tar unzip && \
     rm -rf /var/cache/apt/* /var/lib/apt/lists/*
 
 # Set the locale so that the gist command is happy.
 ENV LANG=en_US.UTF-8
 ENV LC_ALL=C.UTF-8
 
+# Install pip
+RUN curl -sSL https://bootstrap.pypa.io/get-pip.py | python3 -
+
 # Install the ruby gem that enables the uploading of files as gists.
 RUN gem install gist
 
+# Install the AWS CLI
+RUN pip3 install awscli --upgrade
+
 # Download the Google Cloud SDK
 RUN curl -sSL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-217.0.0-linux-x86_64.tar.gz | \
-    tar xzC /
-RUN /google-cloud-sdk/bin/gcloud components update
+    tar xzC / && \
+    /google-cloud-sdk/bin/gcloud components update
 
 # Download Sonobuoy
 RUN curl -sSL https://github.com/heptio/sonobuoy/releases/download/v0.13.0/sonobuoy_0.13.0_linux_amd64.tar.gz | \
@@ -37,11 +43,15 @@ RUN k8s_version="$(curl -s https://storage.googleapis.com/kubernetes-release/rel
 # Copy the keepalive program to /usr/local/bin.
 COPY hack/keepalive/keepalive.linux_amd64 /usr/local/bin/keepalive
 
+# Download govc
+RUN curl -sSL https://github.com/vmware/govmomi/releases/download/v0.20.0/govc_linux_amd64.gz | \
+    gzip -d >/usr/local/bin/govc && chmod 0755 /usr/local/bin/govc
+
 # Create the directory structure.
 RUN mkdir -p /tf/vmc
 
 # Copy the assets into the /tf directory.
-COPY *.tf cloud_config.yaml entrypoint.sh upload_e2e.py sonobuoy.yaml /tf/
+COPY *.tf cloud_config.yaml destroy.sh entrypoint.sh upload_e2e.py sonobuoy.yaml /tf/
 COPY vmc/*.tf /tf/vmc/
 
 # Make sure all of the scripts are marked as executable.
@@ -54,5 +64,5 @@ WORKDIR /tf
 ENV PATH=/google-cloud-sdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # The default argument for the entrypoint will drop the user into a shell.
-CMD [ "sh" ]
+CMD [ "bash" ]
 ENTRYPOINT [ "/tf/entrypoint.sh" ]

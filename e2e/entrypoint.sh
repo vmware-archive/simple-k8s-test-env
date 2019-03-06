@@ -3,7 +3,6 @@
 # posix compliant
 # verified by https://www.shellcheck.net
 
-set -e
 ! /bin/sh -c 'set -o pipefail' >/dev/null 2>&1 || set -o pipefail
 
 usage() {
@@ -17,9 +16,6 @@ ARGS
     name. Must be unique in the content of the vCenter to which the cluster is 
     being deployed as well as in the context of the data directory.
 
-    If TF_VAR_cloud_provider=external then "-ccm" is
-    appended to whatever name is provided.
-
   CMD
     The command to execute.
 
@@ -31,12 +27,20 @@ COMMANDS
   down
     Turns down an existing cluster
 
-  plan
-    A dry-run version of up
+  destroy
+    Destroys a cluster with destroy.sh instead of Terraform.
 
   info [OUTPUTS...]
     Prints information about an existing cluster. If no arguments are provided 
     then all of the information is printed.
+
+  plan
+    A dry-run version of up
+
+  prow
+    Used when executed as a Prow job. This command executes up, test, and
+    destroy. The results are copied into the ARTIFACTS directory, a location
+    provided by Prow.
 
   test
     Schedules the e2e conformance tests.
@@ -47,15 +51,11 @@ COMMANDS
   tlog
     Follows the test job in real time.
 
-  tget [RESULTS_DIR]
+  tget
     Blocks until the test job has completed and then downloads the test
-    artifacts from the test job. This command has one optional argument:
-    
-      RESULTS_DIR  OPTIONAL The path to which the test results are saved.
+    artifacts from the test job.
 
-                   The default value is data/NAME/e2e.
-
-  tput GCS_PATH KEY_FILE [RESULTS_DIR]
+  tput GCS_PATH KEY_FILE
     Blocks until the test job has completed, downloads the test artifacts from
     the test job, and then processes and uploads the test artifacts to a GCS
     bucket.
@@ -66,10 +66,6 @@ COMMANDS
                    the processed test artifacts.
 
       KEY_FILE     A Google Cloud key that has write permissions for GCS_PATH.
-
-      RESULTS_DIR  OPTIONAL The path to which the test results are saved.
-
-                   The default value is data/NAME/e2e.
 
   version
     Prints the client and server version of Kubernetes.
@@ -86,50 +82,135 @@ echo2() {
   echo "${@}" 1>&2
 }
 
+STDERR="/dev/null"
+
+# error MSG [EXIT_CODE]
+#  Prints the supplied message to stderr and returns the shell's
+#  last known exit code, $?. If a second argument is provided the
+#  function returns its value as the return code.
+error() {
+  _ec="${?}"; is_whole_num "${2}" && _ec="${2}"
+  [ "${_ec}" -eq "0" ] && return 0
+  echo2 "ERROR [${_ec}] - ${1}" | tee "${STDERR}"; return "${_ec}"
+}
+
 # fatal MSG [EXIT_CODE]
 #  Prints the supplied message to stderr and returns the shell's
 #  last known exit code, $?. If a second argument is provided the
 #  function returns its value as the return code.
 fatal() {
-  exit_code="${?}"; is_whole_num "${2}" && exit_code="${2}"
-  [ "${exit_code}" -eq "0" ] && exit 0
-  echo2 "FATAL [${exit_code}] - ${1}"; exit "${exit_code}"
+  _ec="${?}"; is_whole_num "${2}" && _ec="${2}"
+  [ "${_ec}" -eq "0" ] && exit 0
+  echo2 "FATAL [${_ec}] - ${1}" | tee "${STDERR}"; exit "${_ec}"
+}
+
+hash7() {
+  { md5sum 2>/dev/null || md5; } | awk '{print $1}' | cut -c-7
 }
 
 # Define how curl should be used.
 CURL="curl --retry 5 --retry-delay 1 --retry-max-time 120"
 
+aws_vmc_routing_network_subnet_arn() {
+  aws ec2 describe-subnets | \
+    jq -r '.Subnets | .[] | select(.Tags != null) | select(any(.Tags[]; .Key == "Name" and .Value == "VMC Routing Network")) | .SubnetId'
+}
+
+aws_create_load_balancer() {
+  # Get the subnet for the VMC routing network.
+  aws_subnet_id="$(aws_vmc_routing_network_subnet_arn)" || \
+    { error "error getting ARN for VMC routing network's subnet"; return; }
+
+  # Create a temp file to write the result of the command that creates the
+  # load balancer.
+  lb_json="$(mktemp)" || \
+    { error "error creatint temp file for load balancer JSON"; return; }
+
+  # Create the load balancer.
+  #
+  # See https://docs.aws.amazon.com/cli/latest/reference/elbv2/create-load-balancer.html
+  # for example output from this command.
+  aws elbv2 create-load-balancer \
+    --name "sk8lb-${CLUSTER_ID}" \
+    --scheme internet-facing \
+    --type network \
+    --ip-address-type ipv4 \
+    --tags "Key=Cluster,Value=${NAME}.${CLUSTER_ID}" \
+    --subnets "${aws_subnet_id}" 1>"${lb_json}" || \
+    { error "failed to create load balancer"; return; }
+}
+
 ################################################################################
 ##                                   main                                     ##
 ################################################################################
+
+# If there are no arguments or the first argument is sh|bash|shell then drop
+# into a shell.
+{ [ "${#}" -eq 0 ] || \
+  echo "${1}" | \
+  grep -iq '^[[:space:]]\{0,\}\(sh\|bash\|shell\)[[:space:]]\{0,\}$'; } && \
+  exec /bin/bash
+
 # Drop out of the script if there aren't at least two args.
 [ "${#}" -lt 2 ] && { echo2 "incorrect number of argumenmts"; usage; exit 1; }
 
 NAME="${1}"; shift
 CMD="${1}"; shift
+DATA="data/${NAME}"
+STDERR="${DATA}/stderr.log"
 
-# The warning (SC2154) for TF_VARTF_VAR_cloud_provider not being assigned
-# is disabled since the environment variable is defined externally.
-#
-# shellcheck disable=SC2154
-if [ "${TF_VAR_cloud_provider}" = "external" ]; then
-  NAME_PREFIX="ccm"
+if [ -n "${ARTIFACTS}" ] && [ -d "${ARTIFACTS}" ]; then
+  RESULTS="${ARTIFACTS}"
+else
+  RESULTS="data/${NAME}/e2e"
 fi
-old_name="${NAME}"
-NAME_PREFIX="${NAME_PREFIX:-k8s}"
-NAME="${NAME_PREFIX}-${NAME}"
-echo "${old_name} is now ${NAME}"
+
+goodbye() {
+  _exit_code="${1:-${?}}"
+  printf '\nSo long and thanks for all the fish.\n'
+  exit "${_exit_code}"
+}
+
+destroy() {
+  TERRAFORM_STATE="${DATA}" ./destroy.sh "${1}"
+}
+
+# If the cmd is "destroy" then use destroy.sh to turn down the cluster.
+if echo "${CMD}" | grep -iq '^[[:space:]]\{0,\}destroy[[:space:]]\{0,\}$'; then
+  if [ -f "${DATA}/clusterid" ]; then
+    destroy "${NAME}.$(cat "${DATA}/clusterid")"
+  else
+    destroy "${NAME}"
+  fi
+  goodbye
+fi
 
 # Configure the data directory.
-mkdir -p data
-sed -i 's~data/terraform.state~data/'"${NAME}"'/terraform.state~g' data.tf
-export TF_VAR_name="${NAME}"
-export TF_VAR_ctl_vm_name="c%02d-${NAME}"
-export TF_VAR_wrk_vm_name="w%02d-${NAME}"
-#export TF_VAR_ctl_network_hostname="c%02d"
-#export TF_VAR_wrk_network_hostname="w%02d"
-export TF_VAR_ctl_network_hostname="${TF_VAR_ctl_vm_name}"
-export TF_VAR_wrk_network_hostname="${TF_VAR_wrk_vm_name}"
+mkdir -p "${DATA}" "${RESULTS}"
+sed -i 's~data/terraform.state~'"${DATA}"'/terraform.state~g' data.tf
+
+# Create the cluster ID.
+if [ ! -f "${DATA}/clusterid" ]; then
+  if [ -e "/proc/sys/kernel/random/uuid" ]; then
+    CLUSTER_ID="$(cat <"/proc/sys/kernel/random/uuid")"
+  elif command -v uuidgen >/dev/null 2>&1; then
+    CLUSTER_ID="$(uuidgen)"
+  else
+    CLUSTER_ID="$(date +%s)"
+  fi
+  CLUSTER_ID="$(echo "${CLUSTER_ID}" | hash7)"
+  printf "%s" "${CLUSTER_ID}" >"${DATA}/clusterid"
+fi
+CLUSTER_ID="$(cat "${DATA}/clusterid")"
+
+export TF_VAR_data_dir="${DATA}"
+export TF_VAR_name="${NAME}.${CLUSTER_ID}"
+export TF_VAR_ctl_vm_name="c%02d.${CLUSTER_ID}"
+export TF_VAR_wrk_vm_name="w%02d.${CLUSTER_ID}"
+export TF_VAR_ctl_network_hostname="c%02d"
+export TF_VAR_wrk_network_hostname="w%02d"
+export TF_VAR_network_domain="${CLUSTER_ID}.sk8"
+export TF_VAR_network_search_domains="${CLUSTER_ID}.sk8"
 
 # If any of the AWS access keys are missing then exit the script.
 EXTERNAL=false
@@ -221,9 +302,6 @@ fi
 # Make sure terraform has everything it needs.
 terraform init
 
-# Ensure the data directory exists.
-mkdir -p "data/${NAME}"
-
 # Check to see if there is a previous etcd discovery URL value. If so, 
 # overwrite etcd.tf with that information.
 if disco=$(terraform output etcd 2>/dev/null) && [ -n "${disco}" ]; then
@@ -231,135 +309,112 @@ if disco=$(terraform output etcd 2>/dev/null) && [ -n "${disco}" ]; then
 fi
 
 # The e2e namespace.
-if [ -f "data/${NAME}/namespace" ]; then
-  E2E_NAMESPACE="$(cat "data/${NAME}/namespace")"
-else
-  E2E_NAMESPACE="sk8e2e-$(date +%s | { md5sum 2>/dev/null || md5; } | awk '{print $1}' | cut -c-7)"
-  printf "%s" "${E2E_NAMESPACE}" >"data/${NAME}/namespace"
+if [ ! -f "${DATA}/namespace" ]; then
+  E2E_NAMESPACE="sk8e2e-$(date +%s | hash7)"
+  printf "%s" "${E2E_NAMESPACE}" >"${DATA}/namespace"
 fi
+E2E_NAMESPACE="$(cat "${DATA}/namespace")"
 
 # Define helpful means of executing kubectl and sonobuoy with the kubeconfig
 # and e2e namespace pre-configured.
-KUBECONFIG="data/${NAME}/kubeconfig"
-[ -f "${KUBECONFIG}" ] || unset KUBECONFIG
+KUBECONFIG="${DATA}/kubeconfig"
 
-cat <<EOF >"data/${NAME}/kubectl"
+cat <<EOF >"${DATA}/kubectl"
 #!/bin/sh
-KUBECONFIG="${KUBECONFIG}" exec kubectl -n "${E2E_NAMESPACE}" "\${@}"
+[ -f "${KUBECONFIG}" ] && export KUBECONFIG="${KUBECONFIG}"
+exec kubectl -n "${E2E_NAMESPACE}" "\${@}"
 EOF
-cat <<EOF >"data/${NAME}/sonobuoy"
+cat <<EOF >"${DATA}/sonobuoy"
 #!/bin/sh
-KUBECONFIG="${KUBECONFIG}" exec sonobuoy -n "${E2E_NAMESPACE}" "\${@}"
+[ -f "${KUBECONFIG}" ] && export KUBECONFIG="${KUBECONFIG}"
+exec sonobuoy -n "${E2E_NAMESPACE}" "\${@}"
 EOF
-chmod 0755 "data/${NAME}/kubectl" "data/${NAME}/sonobuoy"
+chmod 0755 "${DATA}/kubectl" "${DATA}/sonobuoy"
 
-KUBECTL="data/${NAME}/kubectl"
-SONOBUOY="data/${NAME}/sonobuoy"
+KUBECTL="${DATA}/kubectl"
+SONOBUOY="${DATA}/sonobuoy"
 
-wait_for_test_resources() {
-  printf "waiting for e2e resources to come online..."
-  i=0; while true; do
-    [ "${i}" -ge "100" ] && fatal "timed out waiting for e2e resources" 1
-    pod_name=$(${KUBECTL} get pods --no-headers | \
-      grep 'e2e.\{0,\}Running' | awk '{print $1}')
-    [ -n "${pod_name}" ] && echo "${pod_name}" && return 0
-    printf "."
-    sleep 3; i=$((i+1))
-  done
+sonobuoy_status_ok() {
+  ${SONOBUOY} status 2>>"${STDERR}" | grep -iq 'e2e[[:space:]]\{0,\}complete'
 }
 
 get_e2e_pod_name() {
-  ${KUBECTL} get pods --no-headers | grep 'e2e.\{0,\}Running' | awk '{print $1}'
+  ${KUBECTL} get pods --no-headers 2>>"${STDERR}" | \
+    grep 'e2e.\{0,\}Running' | awk '{print $1}'
+}
+
+keepalive_and_log() {
+  # shellcheck disable=SC2086
+  keepalive -- ${KUBECTL} logs -f -c e2e "${1}" 2>>"${STDERR}"
 }
 
 test_log() {
-  if ${SONOBUOY} status 2>&1 | grep -iq 'e2e[[:space:]]\{0,\}complete'; then
-    ${SONOBUOY} logs || true
-    return
-  fi
-  wait_for_test_resources
-  if ! e2e_pod_name=$(get_e2e_pod_name) || [ -z "${e2e_pod_name}" ]; then
-    if ${SONOBUOY} status 2>&1 | grep -iq 'e2e[[:space:]]\{0,\}complete'; then
-      ${SONOBUOY} logs || true
-      return
+  i=0; while ! sonobuoy_status_ok; do
+    [ "${i}" -ge 100 ] && { error "timed out following test logs" 1; return; }
+    if e2e_pod_name=$(get_e2e_pod_name) && [ -n "${e2e_pod_name}" ]; then
+      keepalive_and_log "${e2e_pod_name}" && return
     fi
-  fi
-  echo "e2e pod name: ${e2e_pod_name}"
-  # shellcheck disable=SC2086
-  if ! keepalive -- ${KUBECTL} logs -f -c e2e "${e2e_pod_name}"; then
-    if ${SONOBUOY} status 2>&1 | grep -iq 'e2e[[:space:]]\{0,\}complete'; then
-      ${SONOBUOY} logs || true
-      return
-    fi
-  fi
+    echo "."; sleep 3; i=$((i+1))
+  done
+  ${SONOBUOY} logs
+}
+
+retrieve_and_inflate() {
+  { ${SONOBUOY} retrieve "${RESULTS}" && \
+    tar xzf "${RESULTS}/"*.tar.gz -C "${RESULTS}"; } \
+    2>>"${STDERR}" 1>&2
 }
 
 test_get() {
-  printf "waiting for e2e test(s) to complete..."
-  i=0; while true; do
-    [ "${i}" -ge "100" ] && fatal "timed out waiting for e2e test(s) to complete" 1
-    if ${SONOBUOY} status 2>&1 | grep -iq 'e2e[[:space:]]\{0,\}complete'; then
-      echo "success"; break
-    fi
-    printf "."
-    sleep 3; i=$((i+1))
+  i=0; while ! retrieve_and_inflate; do
+    [ "${i}" -ge 100 ] && { error "timed out getting test results" 1; return; }
+    rm -fr "${RESULTS:?}/*"
+    echo "."; sleep 3; i=$((i+1))
   done
-
-  E2E_RESULTS_DIR="${1:-data/${NAME}/e2e}"
-
-  printf "downloading e2e test results..."
-  i=0; while true; do
-    [ "${i}" -ge "100" ] && fatal "timed out downloading e2e test results" 1
-    mkdir -p "${E2E_RESULTS_DIR}"
-    if ${SONOBUOY} retrieve "${E2E_RESULTS_DIR}" && \
-       tar xzf "${E2E_RESULTS_DIR}/"*.tar.gz -C "${E2E_RESULTS_DIR}"; then
-       echo "success"; break
-    fi
-    rm -fr "${E2E_RESULTS_DIR}"
-    printf "."
-    sleep 3; i=$((i+1))
-  done
+  echo "test results downloaded to ${RESULTS}"
 
   # Remove the e2e tarball once it has been inflated.
-  rm -f "${E2E_RESULTS_DIR}/"*.tar.gz
+  rm -f "${RESULTS}/"*.tar.gz || true
 
-  echo "test results downloaded to ${E2E_RESULTS_DIR}"
+  # Copy the e2e results into the root of the results directory.
+  cp -f "${RESULTS}/plugins/e2e/results/"* "${RESULTS}/" 2>/dev/null || true
 }
 
 test_put() {
   # Drop out of the script if there aren't at least two args.
-  [ "${#}" -lt 2 ] && { echo2 "incorrect number of argumenmts"; usage; exit 1; }
+  [ "${#}" -lt 2 ] && \
+    { echo2 "incorrect number of argumenmts"; usage; return 1; }
 
   GCS_PATH="${1}"; shift
   KEY_FILE="${1}"; shift
-  E2E_RESULTS_DIR="${1:-data/${NAME}/e2e/plugins/e2e/results}"
 
   # Ensure the key file exists.
-  [ -f "${KEY_FILE}" ] || fatal "GCS key file ${KEY_FILE} does not exist" 1
+  [ -f "${KEY_FILE}" ] || \
+    { error "GCS key file ${KEY_FILE} does not exist" 1; return; }
 
   # Ensure the test results exist.
-  [ -f "${E2E_RESULTS_DIR}/e2e.log" ] || fatal "missing test results" 1
+  [ -f "${RESULTS}/e2e.log" ] || { error "missing test results" 1; return; }
 
   ./upload_e2e.py --bucket   "${GCS_PATH}" \
-                  --junit    "${E2E_RESULTS_DIR}/"'junit*.xml' \
-                  --log      "${E2E_RESULTS_DIR}/e2e.log" \
+                  --junit    "${RESULTS}/"'junit*.xml' \
+                  --log      "${RESULTS}/e2e.log" \
                   --key-file "${KEY_FILE}" || \
-    fatal "failed to upload the e2e test results"
+    { error "failed to upload the e2e test results"; return; }
 
   echo "test results uploaded to GCS"
 }
 
 test_delete() {
-  ${SONOBUOY} delete || fatal "failed to delete e2e resources"
+  ${SONOBUOY} delete && rm -f "${DATA}/namespace" "${DATA}/sonobuoy.yaml"
 }
 
 test_status() {
-  ${SONOBUOY} status 2>&1 | grep -iq 'e2e[[:space:]]\{0,\}complete' || \
-    wait_for_test_resources
-  ${SONOBUOY} status --show-all || fatal "failed to query e2e status"
+  ${SONOBUOY} status --show-all
 }
 
 test_start() {
+  rm -fr "${RESULTS:?}/*"
+
   KUBE_CONFORMANCE_IMAGE="${KUBE_CONFORMANCE_IMAGE:-gcr.io/heptio-images/kube-conformance:latest}"
   E2E_FOCUS="${E2E_FOCUS:-\\\[Conformance\\\]}"
   E2E_SKIP="${E2E_SKIP:-Alpha|\\\[(Disruptive|Feature:[^\\\]]+|Flaky)\\\]}"
@@ -368,16 +423,14 @@ test_start() {
       -e 's~{{E2E_SKIP}}~'"${E2E_SKIP}"'~g' \
       -e 's~{{NAMESPACE}}~'"${E2E_NAMESPACE}"'~g' \
       -e 's~{{KUBE_CONFORMANCE_IMAGE}}~'"${KUBE_CONFORMANCE_IMAGE}"'~g' \
-      >"data/${NAME}/sonobuoy.yaml" <sonobuoy.yaml
+      >"${DATA}/sonobuoy.yaml" <sonobuoy.yaml || \
+      { error "failed to interpolate sonobuoy.yaml"; return; }
 
   # Create the e2e job.
-  ${KUBECTL} create -f "data/${NAME}/sonobuoy.yaml" || \
-    fatal "failed to create e2e resources"
+  ${KUBECTL} apply -f "${DATA}/sonobuoy.yaml" || \
+    { error "failed to create e2e resources"; return; }
 
-  wait_for_test_resources
-
-  # Print the status.
-  ${SONOBUOY} status --show-all || fatal "failed to query e2e status"
+  test_log
 }
 
 print_version() {
@@ -389,24 +442,37 @@ print_version() {
 }
 
 turn_up() {
+  if [ "${EXTERNAL}" = "true" ]; then
+    aws_create_load_balancer || \
+      { error "error creating load balancer"; return; }
+
+    lb_arn="$(jq -r '.LoadBalancers[0].LoadBalancerArn' <"${lb_json}")" || \
+      { error "error getting ARN for load balancer"; return; }
+
+    lb_dns="$(jq -r '.LoadBalancers[0].DNSName' <"${lb_json}")" || \
+      { error "error getting DNS for load balancer"; return; }
+
+    export TF_VAR_lb_arn="${lb_arn}" TF_VAR_lb_dns="${lb_dns}"
+  fi
+
   terraform apply -auto-approve || \
-    fatal "failed to turn up cluster"
+    { error "failed to turn up cluster"; return; }
 
   if [ "${EXTERNAL}" = "true" ]; then
-    # Get the external FQDN of the cluster from the Terraform output cache.
-    ext_fqdn=$(terraform output external_fqdn) || \
-      fatal "failed to read external fqdn"
-
     printf "waiting for cluster to finish coming online... "
     i=0 && while true; do
-      [ "${i}" -ge 100 ] && fatal "timed out waiting for cluster to come online" 1
-      [ "ok" = "$(${CURL} "http://${ext_fqdn}/healthz" 2>/dev/null)" ] && \
+      [ "${i}" -ge 100 ] && { error "timed out waiting for cluster" 1; return; }
+      [ "ok" = "$(${CURL} "http://${lb_dns}/healthz" 2>/dev/null)" ] && \
         echo "ok" && break
-      printf "."
-      sleep 3
-      i=$((i+1))
+      printf "."; sleep 3; i=$((i+1))
     done
   fi
+}
+
+prow() {
+  turn_up && print_version && test_start && test_get; _ec_1="${?}"
+  destroy "${NAME}.${CLUSTER_ID}";                    _ec_2="${?}"
+  { [ "${_ec_1}" -ne "0" ] && goodbye "${_ec_1}"; } || goodbye "${_ec_2}"
 }
 
 # shellcheck disable=SC2154
@@ -418,8 +484,11 @@ else
     plan)
       terraform plan
       ;;
-    info)
+    info|status)
       terraform output "${@}"
+      ;;
+    prow)
+      prow
       ;;
     up)
       turn_up
@@ -430,33 +499,28 @@ else
     test)
       test_start
       ;;
-    tsta)
+    tsta|test-status)
       test_status
       ;;
-    tdel)
+    tdel|test-delete)
       test_delete
       ;;
-    tlog)
+    tlog|test-log)
       test_log
       ;;
-    tget)
-      test_get "${@}"
+    tget|test-results-get|test-results-download)
+      test_get
       ;;
-    tput)
+    tput|test-results-put|test-results-upload)
       test_put "${@}"
       ;;
     version)
       print_version
       ;;
-    sh|bash|shell)
-      exec /bin/bash
-      ;;
     *)
       echo2 "invalid command"; usage; exit 1
       ;;
   esac
-  exit_code="${?}"
 fi
 
-echo "So long and thanks for all the fish."
-exit "${exit_code:-0}"
+goodbye "${?}"

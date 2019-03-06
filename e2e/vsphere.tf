@@ -2,11 +2,8 @@
 //                                vSphere                                     //
 ////////////////////////////////////////////////////////////////////////////////
 locals {
-  vm_path_prefix   = "${var.cloud_provider == "external" ? "ccm" : "k8s"}"
-  name_sans_prefix = "${replace(var.name, "/^(?:[^\\-]+\\-)?(.*)$/", "$1")}"
-
-  vsphere_folder        = "${var.vsphere_folder}/${local.vm_path_prefix}/${local.name_sans_prefix}"
-  vsphere_resource_pool = "${var.vsphere_resource_pool}/${local.vm_path_prefix}"
+  vsphere_folder        = "${var.vsphere_folder}/${var.name}"
+  vsphere_resource_pool = "${var.vsphere_resource_pool}/${var.name}"
 }
 
 data "vsphere_datacenter" "datacenter" {
@@ -20,12 +17,12 @@ resource "vsphere_folder" "folder" {
 }
 
 data "vsphere_resource_pool" "resource_pool" {
-  name          = "${local.vsphere_resource_pool}"
+  name          = "${var.vsphere_resource_pool}"
   datacenter_id = "${data.vsphere_datacenter.datacenter.id}"
 }
 
 resource "vsphere_resource_pool" "resource_pool" {
-  name                    = "${local.name_sans_prefix}"
+  name                    = "${var.name}"
   parent_resource_pool_id = "${data.vsphere_resource_pool.resource_pool.id}"
 }
 

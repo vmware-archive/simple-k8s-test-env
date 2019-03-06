@@ -34,7 +34,7 @@ $ docker run -it --rm \
   stable up
 ```
 
-4. Schedule the e2e conformance tests as job on the turned-up cluster:
+4. Run the e2e conformance tests as job on the turned-up cluster:
 ```shell
 $ docker run -it --rm \
   -v "$(pwd)/data":/tf/data \
@@ -42,15 +42,7 @@ $ docker run -it --rm \
   stable test
 ```
 
-5. Follow the remote, e2e conformance job's progress in real-time:
-```shell
-$ docker run -it --rm \
-  -v "$(pwd)/data":/tf/data \
-  gcr.io/kubernetes-conformance-testing/sk8e2e \
-  stable tlog
-```
-
-6. Turn down the cluster:
+5. Turn down the cluster:
 ```shell
 $ docker run -it --rm \
   -v "$(pwd)/data":/tf/data \
@@ -109,3 +101,23 @@ $ docker run -it --rm \
   gcr.io/kubernetes-conformance-testing/sk8e2e \
   stable tdel
 ```
+
+## Run the e2e tests on Prow
+The same image may also be used as the basis of a Prow job:
+
+```shell
+$ docker run -it --rm \
+  --env-file config.env \
+  --env-file secure.env \
+  -e ARTIFACTS=/tmp/artifacts \
+  -v "$(pwd)/.artifacts":/tmp/artifacts \
+  -v "$(pwd)/data":/tf/data \
+  gcr.io/kubernetes-conformance-testing/sk8e2e \
+  stable prow
+```
+
+The target `prow` executes the following steps:
+1. Turn up the cluster
+2. Run conformance tests
+3. Download results to the `${ARTIFACTS}` directory provided by Prow
+4. Destroys the cluster

@@ -2,6 +2,11 @@
 //                                  Global                                    //
 ////////////////////////////////////////////////////////////////////////////////
 
+// data_dir is the path to the data directory.
+variable "data_dir" {
+  default = "data"
+}
+
 // The name of the deployment. Used by some resources as a means to identify
 // the deployment resources.
 variable "name" {}
@@ -143,7 +148,7 @@ variable "vsphere_network" {
 
 // The path of the template to use when cloning.
 variable "vsphere_template" {
-  default = "Templates/centos_cloud_template"
+  default = "Workloads/sk8e2e/centos_sk8e2e_template"
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -282,11 +287,11 @@ variable "log_level_cloud_controller_manager" {
 //                                   VM                                       //
 ////////////////////////////////////////////////////////////////////////////////
 variable "ctl_vm_name" {
-  default = "k8s-c%02d"
+  default = "c%02d"
 }
 
 variable "wrk_vm_name" {
-  default = "k8s-w%02d"
+  default = "w%02d"
 }
 
 variable "ctl_vm_num_cpu" {
@@ -325,11 +330,11 @@ variable "wrk_vm_disk_size" {
 //                                Networking                                  //
 ////////////////////////////////////////////////////////////////////////////////
 variable "ctl_network_hostname" {
-  default = "k8s-c%02d"
+  default = "c%02d"
 }
 
 variable "wrk_network_hostname" {
-  default = "k8s-w%02d"
+  default = "w%02d"
 }
 
 // The IP range for masters is 192.168.2.128-191, 63 hosts.

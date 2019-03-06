@@ -68,9 +68,9 @@ EOF
 // Write the admin kubeconfig to the local filesystem.
 resource "local_file" "k8s_admin_kubeconfig" {
   content  = "${data.template_file.k8s_admin_kubeconfig.rendered}"
-  filename = "data/${var.name}/kubeconfig"
+  filename = "${var.data_dir}/kubeconfig"
 }
 
 output "kubeconfig" {
-    value = "data/${var.name}/kubeconfig"
+    value = "${var.data_dir}/kubeconfig"
 }

@@ -9,21 +9,26 @@ xdir="${hackd}/.."
 #make -C "${xdir}" image
 
 # Build the docker run command line.
-drun="docker run -it --rm -v "${xdir}/data":/tf/data"
+drun="docker run -it --rm -v '${xdir}/data':/tf/data"
+
+# Create a directory in which to store the test artifacts.
+[ -d "${ARTIFACTS}" ] || ARTIFACTS="$(mktemp -p "$(pwd)" -d)"
+drun="${drun} -v '${ARTIFACTS}':/tmp/artifacts"
+drun="${drun} -e ARTIFACTS=/tmp/artifacts"
 
 # Map the terraform plug-ins directory into the Docker image so any
 # plug-ins Terraform needs are persisted beyond the lifetime of the
 # container and saves time when launching new containers.
-drun="${drun} -v "${xdir}/.terraform/plugins":/tf/.terraform/plugins"
+drun="${drun} -v '${xdir}/.terraform/plugins':/tf/.terraform/plugins"
 
 # If GIST and SK8 are both set to valid file paths then
 # mount GIST to /root/.gist and SK8 to /tmp/sk8.sh
 # so the local sk8 source may be uploaded to a gist and made 
 # available to Terraform's http provider.
 [ -f "${HOME}/.gist" ] && \
-  drun="${drun} -v "${HOME}/.gist":/root/.gist:ro"
+  drun="${drun} -v '${HOME}/.gist':/root/.gist:ro"
 [ -f "${xdir}/../sk8.sh" ] && \
-  drun="${drun} -v "${xdir}/../sk8.sh":/tmp/sk8.sh:ro"
+  drun="${drun} -v '${xdir}/../sk8.sh':/tmp/sk8.sh:ro"
 
 # Find all the exported Terraform vars that are not usernames or passwords.
 for e in $(env | grep 'TF_VAR_'); do
@@ -32,8 +37,8 @@ for e in $(env | grep 'TF_VAR_'); do
 done
 
 # Add the environment files if they exist.
-[ -f "${xdir}/config.env" ] && drun="${drun} --env-file "${xdir}/config.env""
-[ -f "${xdir}/secure.env" ] && drun="${drun} --env-file "${xdir}/secure.env""
+[ -f "${xdir}/config.env" ] && drun="${drun} --env-file '${xdir}/config.env'"
+[ -f "${xdir}/secure.env" ] && drun="${drun} --env-file '${xdir}/secure.env'"
 
 # Check the first argument to see if it's a size. The sizes are:
 #
@@ -69,16 +74,18 @@ case "${1}" in
     ;;
 esac
 
-echo "${drun}"
+# Run docker.
+drun="${drun} \
+-e DEBUG='${DEBUG}' \
+-e E2E_FOCUS='${E2E_FOCUS-}' \
+-e E2E_SKIP='${E2E_SKIP-}' \
+-e KUBE_CONFORMANCE_IMAGE='${KUBE_CONFORMANCE_IMAGE-}' \
+-e TF_VAR_ctl_count=${TF_VAR_ctl_count} \
+-e TF_VAR_bth_count=${TF_VAR_bth_count} \
+-e TF_VAR_wrk_count=${TF_VAR_wrk_count} \
+gcr.io/kubernetes-conformance-testing/sk8e2e"
+
+printf "%s " "${drun}" && echo "${@}" && echo
 
 # Run docker.
-${drun} \
-  -e DEBUG="${DEBUG}" \
-  -e E2E_FOCUS="${E2E_FOCUS-}" \
-  -e E2E_SKIP="${E2E_SKIP-}" \
-  -e KUBE_CONFORMANCE_IMAGE="${KUBE_CONFORMANCE_IMAGE-}" \
-  -e TF_VAR_ctl_count=${TF_VAR_ctl_count} \
-  -e TF_VAR_bth_count=${TF_VAR_bth_count} \
-  -e TF_VAR_wrk_count=${TF_VAR_wrk_count} \
-  gcr.io/kubernetes-conformance-testing/sk8e2e \
-  "${@}"
+eval "${drun}" "${@}"

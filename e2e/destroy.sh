@@ -4,7 +4,7 @@
 # verified by https://www.shellcheck.net
 
 ################################################################################
-## destroy-force.sh NAME                                                      ##
+## destroy.sh NAME                                                            ##
 ##                                                                            ##
 ##   This script destroys a provisioned environment manually by:              ##
 ##                                                                            ##
@@ -14,29 +14,23 @@
 ##     4. Removes local Terraform state.                                      ##
 ################################################################################
 
-# The script requires two arguments, the type of cluster and its name.
+# The script requires one arguments, the name of the cluster.
 if [ -z "${1}" ]; then
-  echo "usage: ${0} TYPE NAME"
+  echo "usage: ${0} NAME"
   exit 1
 fi
 
-TYPE="${1}"; shift
-NAME="${1}"; shift
+NAME="${1}"
 
 # Marking this as a dry run results in an actions that *would* occur
 # simply being echoed to stdout.
-if [ "${VSPHERE_DESTROY_FORCE}" = "dryrun" ]; then
+if [ "${DESTROY_FORCE}" = "dryrun" ]; then
   DRYRUN=true
 fi
 
 ################################################################################
 ##                         AWS Load Balancer Resources                        ##
 ################################################################################
-
-# Make sure the AWS environment variables are set.
-export AWS_ACCESS_KEY_ID=${VSPHERE_AWS_ACCESS_KEY_ID}
-export AWS_SECRET_ACCESS_KEY=${VSPHERE_AWS_SECRET_ACCESS_KEY}
-export AWS_DEFAULT_REGION=${VSPHERE_AWS_REGION}
 
 # Parses the ARNs of resources as a result of describing the tags for
 # one or more ARNs.
@@ -45,7 +39,7 @@ get_arns_from_tag_descriptions() {
   aws elbv2 describe-tags --resource-arns "$@" | \
     jq ".TagDescriptions | \
       map(select(any(.Tags[]; .Key == \"Cluster\" and \
-      .Value == \"${TYPE}-${NAME}\" )))" | \
+      .Value == \"${NAME}\" )))" | \
     jq ".[] | .ResourceArn" | \
     tr -d '"'
 }
@@ -59,6 +53,12 @@ get_lb_arns() {
     startswith(\"sk8lb\")))) | \
     .[] | \
     .LoadBalancerArn" | tr -d '"')
+}
+
+# Get the AWS listeners for the load balancer.
+get_lb_lis_arns() {
+  aws elbv2 describe-listeners --load-balancer-arn "${1}" | \
+    jq ".Listeners | .[] | .ListenerArn" | tr -d '"'
 }
 
 # Get the AWS load balancer target groups.
@@ -77,7 +77,7 @@ get_elastic_ip_allocation_ids() {
   aws ec2 describe-addresses | \
     jq ".Addresses | \
       map(select(any(.Tags[]; .Key == \"Cluster\" and \
-      .Value == \"${TYPE}-${NAME}\" )))" | \
+      .Value == \"${NAME}\" )))" | \
     jq ".[] | .AllocationId" | \
     tr -d '"'
 }
@@ -85,14 +85,24 @@ get_elastic_ip_allocation_ids() {
 # Get the load balancer ARNs.
 echo
 echo '# deleting AWS load balancer(s)'
-if arns=$(get_lb_arns) && [ -n "${arns}" ]; then
+if lb_arns=$(get_lb_arns) && [ -n "${lb_arns}" ]; then
   # Delete the load balancers.
-  for arn in ${arns}; do
+  for lb_arn in ${lb_arns}; do
+    if lis_arns=$(get_lb_lis_arns "${lb_arn}") && [ -n "${lis_arns}" ]; then
+      for lis_arn in ${lis_arns}; do
+        if [ "${DRYRUN}" = "true" ]; then
+          echo aws elbv2 delete-listener --listener-arn "${lis_arn}"
+        else
+          echo "  - ${lis_arn}"
+          aws elbv2 delete-listener --listener-arn "${lis_arn}"
+        fi
+      done
+    fi
     if [ "${DRYRUN}" = "true" ]; then
-      echo aws elbv2 delete-load-balancer --load-balancer-arn "${arn}"
+      echo aws elbv2 delete-load-balancer --load-balancer-arn "${lb_arn}"
     else
-      echo "  - ${arn}"
-      aws elbv2 delete-load-balancer --load-balancer-arn "${arn}"
+      echo "  - ${lb_arn}"
+      aws elbv2 delete-load-balancer --load-balancer-arn "${lb_arn}"
     fi
   done
 
@@ -101,10 +111,10 @@ if arns=$(get_lb_arns) && [ -n "${arns}" ]; then
   echo '# waiting for deletion of AWS load balancer(s)'
   if [ "${DRYRUN}" = "true" ]; then
     # shellcheck disable=SC2086
-    echo aws elbv2 wait load-balancers-deleted --load-balancer-arns ${arns}
+    echo aws elbv2 wait load-balancers-deleted --load-balancer-arns ${lb_arns}
   else
     # shellcheck disable=SC2086
-    aws elbv2 wait load-balancers-deleted --load-balancer-arns ${arns}
+    aws elbv2 wait load-balancers-deleted --load-balancer-arns ${lb_arns}
   fi
 fi
 
@@ -122,28 +132,24 @@ if arns=$(get_lb_target_group_arns) && [ -n "${arns}" ]; then
   done
 fi
 
-
 ################################################################################
 ##                             vSphere Resources                              ##
 ################################################################################
 
 # Define the information used to access the vSphere server.
-export GOVC_USERNAME=${GOVC_USERNAME:-${VSPHERE_USER}}
-export GOVC_PASSWORD=${GOVC_PASSWORD:-${VSPHERE_PASSWORD}}
-export GOVC_URL=${GOVC_URL:-${VSPHERE_SERVER}}
 export GOVC_DEBUG=${GOVC_DEBUG:-false}
 
 # Define the parent datacenter to limit the scope of the govc commands.
 export GOVC_DATACENTER=${GOVC_DATACENTER:-SDDC-Datacenter}
 
 # Define the parent folder to limit scope of the govc command.
-GOVC_ROOT_FOLDER=${GOVC_ROOT_FOLDER:-"/${GOVC_DATACENTER}/vm/Workloads/sk8e2e/${TYPE}"}
+GOVC_ROOT_FOLDER=${GOVC_ROOT_FOLDER:-"/${GOVC_DATACENTER}/vm/Workloads/sk8e2e"}
 
 # Define the folder that contains the VMs.
 GOVC_VM_FOLDER=${GOVC_VM_FOLDER:-"${GOVC_ROOT_FOLDER}/${NAME}"}
 
 # Define the parent resource pool to limit scope of the govc command.
-GOVC_ROOT_RESOURCE_POOL=${GOVC_ROOT_RESOURCE_POOL:-"/${GOVC_DATACENTER}/host/Cluster-1/Resources/Compute-ResourcePool/sk8e2e/${TYPE}"}
+GOVC_ROOT_RESOURCE_POOL=${GOVC_ROOT_RESOURCE_POOL:-"/${GOVC_DATACENTER}/host/Cluster-1/Resources/Compute-ResourcePool/sk8e2e"}
 
 # Define the parent resource pool to limit scope of the govc command
 # when querying resource pools that match a name.
@@ -196,16 +202,16 @@ if govc object.collect "${GOVC_VM_RESOURCE_POOL}" >/dev/null 2>&1; then
   fi
 fi
 
-# If the environment variable VSPHERE_TFSTATE_PATH is set then
+# If the environment variable TERRAFORM_STATE is set then
 # check to see if it is a valid file path, and if so, treat it
 # as the Terraform file/directory to be removed.
 echo
 echo '# deleting Terraform state'
-if [ -e "${VSPHERE_TFSTATE_PATH}" ]; then
+if [ -e "${TERRAFORM_STATE}" ]; then
   if [ "${DRYRUN}" = "true" ]; then
-    echo rm -fr "${VSPHERE_TFSTATE_PATH}"
+    echo rm -fr "${TERRAFORM_STATE}"
   else
-    echo "  - ${VSPHERE_TFSTATE_PATH}"
-    rm -fr "${VSPHERE_TFSTATE_PATH}"
+    echo "  - ${TERRAFORM_STATE}"
+    rm -fr "${TERRAFORM_STATE}"
   fi
 fi
