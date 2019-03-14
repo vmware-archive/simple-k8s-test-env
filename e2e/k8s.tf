@@ -72,6 +72,9 @@ CLOUD_PROVIDER=$${cloud_provider}
 # The gzip'd, base-64 encoded cloud provider configuration to use.
 CLOUD_CONFIG="$${cloud_config}"
 
+# The image used for an external cloud provider.
+CLOUD_PROVIDER_IMAGE="$${cloud_provider_image}"
+
 # The K8s cluster admin.
 CLUSTER_ADMIN="$${k8s_cluster_admin}"
 
@@ -185,8 +188,9 @@ EOF
     encryption_key = "${var.k8s_encryption_key}"
 
     //
-    cloud_provider = "${var.cloud_provider}"
-    cloud_config   = "${var.cloud_provider == "external" ? base64gzip(data.template_file.ccm_config.rendered) : base64gzip(data.template_file.cloud_provider_config.rendered)}"
+    cloud_provider       = "${var.cloud_provider}"
+    cloud_provider_image = "${var.cloud_provider_image}"
+    cloud_config         = "${var.cloud_provider == "external" ? base64gzip(data.template_file.ccm_config.rendered) : base64gzip(data.template_file.cloud_provider_config.rendered)}"
 
     //
     tls_ca_crt = "${base64gzip(local.tls_ca_crt)}"

@@ -168,6 +168,11 @@ variable "cloud_provider" {
   default = "vsphere"
 }
 
+// The image used for an external cloud provider.
+variable "cloud_provider_image" {
+  default = "gcr.io/cloud-provider-vsphere/vsphere-cloud-controller-manager:latest"
+}
+
 // The name of the cluster
 variable "cluster_name" {
   default = "k8s"
