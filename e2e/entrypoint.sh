@@ -214,10 +214,11 @@ export TF_VAR_network_search_domains="${CLUSTER_ID}.sk8"
 
 # If any of the AWS access keys are missing then exit the script.
 EXTERNAL=false
-if [ -n "${AWS_ACCESS_KEY_ID}" ] && \
+if [ "${CMD}" = "plugins" ] || \
+  { [ -n "${AWS_ACCESS_KEY_ID}" ] && \
   [ -n "${AWS_SECRET_ACCESS_KEY}" ] && \
   [ -n "${AWS_DEFAULT_REGION}" ] && \
-  [ ! "${AWS_LB}" = "false" ]; then
+  [ ! "${AWS_LB}" = "false" ]; }; then
 
   EXTERNAL=true
 
@@ -301,6 +302,13 @@ fi
 
 # Make sure terraform has everything it needs.
 terraform init
+
+# If the command was "plugins", then the container should exit after
+# initializing Terraform and downloading the plug-ins.
+if [ "${CMD}" = "plugins" ]; then
+  rm -fr .terraform/terraform.tfstate "${DATA}"
+  exit 0
+fi
 
 # Check to see if there is a previous etcd discovery URL value. If so, 
 # overwrite etcd.tf with that information.
@@ -516,6 +524,9 @@ else
       ;;
     version)
       print_version
+      ;;
+    plugins)
+      echo "downloaded terraform plug-ins"
       ;;
     *)
       echo2 "invalid command"; usage; exit 1
