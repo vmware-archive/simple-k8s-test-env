@@ -1,7 +1,7 @@
 all: build
 
 IMAGE := gcr.io/kubernetes-conformance-testing/sk8e2e
-TAG ?= $(shell date +v%Y%m%d)-$(shell git describe --tags --always --dirty)
+TAG ?= $(shell git describe --always --dirty)
 KEEPALIVE := hack/keepalive/keepalive.linux_amd64
 
 $(KEEPALIVE):
