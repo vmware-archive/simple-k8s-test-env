@@ -475,6 +475,9 @@ turn_up() {
       printf "."; sleep 3; i=$((i+1))
     done
   fi
+
+  terraform output >"${RESULTS}/terraform-output-vars.txt" || \
+    { error "failed to write terraform output vars"; return; }
 }
 
 prow() {
