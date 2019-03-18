@@ -63,6 +63,9 @@ WORKDIR /tf
 # Update the PATH to include the Google Cloud SDK.
 ENV PATH=/google-cloud-sdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
+# Download the Terraform plug-ins.
+RUN ./entrypoint.sh null plugins
+
 # The default argument for the entrypoint will drop the user into a shell.
 CMD [ "bash" ]
 ENTRYPOINT [ "/tf/entrypoint.sh" ]
