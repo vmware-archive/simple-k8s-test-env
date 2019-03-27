@@ -33,15 +33,29 @@ fi
 ################################################################################
 
 # Parses the ARNs of resources as a result of describing the tags for
-# one or more ARNs.
+# one or more ARNs. Because AWS does not permit more than 20 --resource-arns,
+# it's potentially necessary to loop over the given arn inputs to describe their
+# tags in batches, 20 at a time.
 get_arns_from_tag_descriptions() {
-  if [ -z "$*" ]; then return; fi
-  aws elbv2 describe-tags --resource-arns "$@" | \
-    jq ".TagDescriptions | \
-      map(select(any(.Tags[]; .Key == \"Cluster\" and \
-      .Value == \"${NAME}\" )))" | \
-    jq ".[] | .ResourceArn" | \
-    tr -d '"'
+  [ "${#}" -gt "0" ] || return 0
+  _out_arns=""
+  while [ "${#}" -gt "0" ]; do
+    _in_arns=""
+    i=0 && while [ "${i}" -lt "10" ] && [ "${#}" -gt "0" ]; do
+      { [ -z "${_in_arns}" ] && _in_arns="${1}"; } || _in_arns="${_in_arns} ${1}"
+      shift; i=$((i+1))
+    done
+    # shellcheck disable=SC2086
+    _tag_args=$(aws elbv2 describe-tags --resource-arns ${_in_arns} | \
+      jq ".TagDescriptions | \
+        map(select(any(.Tags[]; .Key == \"Cluster\" and \
+        .Value == \"${NAME}\" )))" | \
+      jq ".[] | .ResourceArn" | \
+      tr -d '"') || return "${?}"
+    { [ -z "${_out_arns}" ] && _out_arns="${_tag_args}"; } || \
+      _out_arns="${_out_arns} ${_tag_args}"
+  done
+  echo "${_out_arns}"
 }
 
 # Get the AWS load balancers.
