@@ -143,7 +143,7 @@ variable "vsphere_datastore" {
 
 // The name of the vSphere network to which the VMs' NICs will be attached.
 variable "vsphere_network" {
-  default = "VMC Networks/sddc-cgw-network-3"
+  default = "sddc-cgw-network-3"
 }
 
 // The path of the template to use when cloning.
