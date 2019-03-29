@@ -826,9 +826,10 @@ get_k8s_artifacts_url() {
 
   # If the version is ci/latest, release/latest, or release/stable then
   # append .txt to the version string so the next if block gets triggered.
-  echo "${ver}" | \
-    grep -q '^\(ci/latest\)\|\(\(release/\(latest\|stable\)\)\(-[[:digit:]]\{1,\}\(\.[[:digit:]]\{1,\}\)\{0,1\}\)\{0,1\}\)$' && \
+  if echo "${ver}" | \
+    grep -q '^\(\(ci/latest\)\|\(\(release/\(latest\|stable\)\)\(-[[:digit:]]\{1,\}\(\.[[:digit:]]\{1,\}\)\{0,1\}\)\{0,1\}\)\)$'; then
     ver="${ver}.txt"
+  fi
 
   # If the version points to a .txt file then its *that* file that contains
   # the actual version information.
