@@ -410,7 +410,7 @@ variable "runsc_version" {
 
 // https://github.com/containernetworking/plugins/releases
 variable "cni_plugins_version" {
-  default = "0.7.1"
+  default = "0.7.5"
 }
 
 // https://github.com/containerd/containerd/releases
