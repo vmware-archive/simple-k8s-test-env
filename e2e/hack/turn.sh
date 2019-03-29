@@ -80,6 +80,7 @@ drun="${drun} \
 -e E2E_FOCUS='${E2E_FOCUS-}' \
 -e E2E_SKIP='${E2E_SKIP-}' \
 -e KUBE_CONFORMANCE_IMAGE='${KUBE_CONFORMANCE_IMAGE-}' \
+-e TF_VAR_k8s_version='${TF_VAR_k8s_version:-${K8S_VERSION-}}' \
 -e TF_VAR_ctl_count=${TF_VAR_ctl_count} \
 -e TF_VAR_bth_count=${TF_VAR_bth_count} \
 -e TF_VAR_wrk_count=${TF_VAR_wrk_count} \

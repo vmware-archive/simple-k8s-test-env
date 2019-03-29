@@ -64,7 +64,9 @@ WORKDIR /tf
 ENV PATH=/google-cloud-sdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # Download the Terraform plug-ins.
-RUN ./entrypoint.sh null plugins
+RUN cp data.tf data.tf.bak && \
+  ./entrypoint.sh null plugins && \
+  mv -f data.tf.bak data.tf
 
 # The default argument for the entrypoint will drop the user into a shell.
 CMD [ "bash" ]
