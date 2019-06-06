@@ -2357,7 +2357,7 @@ install_kube_apiserver() {
 
   # Determine whether or not the version being deployed is greater than or
   # equal to v1.15.0-alpha.0.
-  _ge_v1_15_alpha_0="$(semver_comp "${k8s_client_ver}" "v1.15.0-alpha.0")" || \
+  _ge_v1_14_beta_1="$(semver_comp "${k8s_client_ver}" "v1.14.0-beta.1")" || \
     { error "failed to compare k8s semvers"; return; }
 
   if [ "${_ge_v1_14_alpha_1}" -ge "0" ]; then
@@ -2368,7 +2368,7 @@ install_kube_apiserver() {
 
   # Please see http://bit.ly/2tM4DDg for information on configuring the
   # aggregation layer.
-  if [ "${_ge_v1_15_alpha_0}" -ge "0" ]; then
+  if [ "${_ge_v1_14_beta_1}" -ge "0" ]; then
     AGGREGATION_LAYER_OPTS="$(cat <<EOF
 --requestheader-client-ca-file='${TLS_CA_CRT}' \
 --requestheader-allowed-names=front-proxy-client \
