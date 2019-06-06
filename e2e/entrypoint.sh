@@ -590,7 +590,7 @@ turn_up() {
   if [ "${EXTERNAL}" = "true" ]; then
     printf "waiting for cluster to finish coming online... "
     i=0 && while true; do
-      [ "${i}" -ge 100 ] && { error "timed out waiting for cluster" 1; return; }
+      [ "${i}" -ge 110 ] && { error "timed out waiting for cluster" 1; return; }
       [ "ok" = "$(${CURL} "http://${lb_dns}/healthz" 2>/dev/null)" ] && \
         echo "ok" && break
       printf "."; sleep 3; i=$((i+1))
