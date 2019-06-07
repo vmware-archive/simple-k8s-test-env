@@ -4914,7 +4914,7 @@ download_vcsim() {
 
 download_govc() {
   if [ -f "/opt/bin/govc" ]; then
-    info "already downloaded vcsim"; return
+    info "already downloaded govc"; return
   fi
   url=https://s3-us-west-2.amazonaws.com/cnx.vmware/cicd/govc_linux_amd64
   ${CURL} -Lo "${BIN_DIR}/govc" "${url}" || error "failed to download ${url}"
