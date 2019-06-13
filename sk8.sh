@@ -391,7 +391,7 @@ CLEANUP_DISABLED=$(parse_bool "${CLEANUP_DISABLED}")
 CNI_BIN_DIR="${CNI_BIN_DIR:-/opt/bin/cni}"
 
 # The default curl command to use instead of invoking curl directly.
-CURL="curl --retry 5 --retry-delay 1 --retry-max-time 120"
+CURL="curl --retry 10 --retry-delay 1 --retry-max-time 300"
 
 # Setting CURL_DEBUG to a truthy value causes the default curl command
 # to use verbose mode. Please keep in mind that this can negatively
