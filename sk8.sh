@@ -583,6 +583,8 @@ NGINX_VERSION="${NGINX_VERSION:-1.14.0}"
 RUNC_VERSION="${RUNC_VERSION:-1.0.0-rc5}"
 RUNSC_VERSION="${RUNSC_VERSION:-2018-09-01}"
 
+ARTIFACTS_BASE_URL=http://storage.googleapis.com/sk8-bin
+
 # The paths to the TLS CA crt and key files used to sign the
 # generated certificate signing request (CSR).
 TLS_CA_CRT=${TLS_CA_CRT:-/etc/ssl/ca.crt}
@@ -4522,8 +4524,7 @@ download_cni_plugins() {
   if is_url "${CNI_PLUGINS_VERSION}"; then
     url="${CNI_PLUGINS_VERSION}"
   else
-    url=https://github.com/containernetworking/plugins/releases/download
-    url="${url}/v${CNI_PLUGINS_VERSION}/cni-plugins-amd64-v${CNI_PLUGINS_VERSION}.tgz"
+    url="${ARTIFACTS_BASE_URL}/cni-plugins-amd64-v${CNI_PLUGINS_VERSION}.tgz"
   fi
   http_ok "${url}" || { error "could not stat ${url}"; return; }
   mkdir -p "${CNI_BIN_DIR}"
@@ -4540,8 +4541,7 @@ download_containerd() {
   if is_url "${CONTAINERD_VERSION}"; then
     url="${CONTAINERD_VERSION}"
   else
-    url=https://github.com/containerd/containerd/releases/download
-    url="${url}/v${CONTAINERD_VERSION}/containerd-${CONTAINERD_VERSION}.linux-amd64.tar.gz"
+    url="${ARTIFACTS_BASE_URL}/containerd-${CONTAINERD_VERSION}.linux-amd64.tar.gz"
   fi
   http_ok "${url}" || { error "could not stat ${url}"; return; }
   info "downloading ${url}"
@@ -4560,12 +4560,9 @@ download_coredns() {
   if is_url "${COREDNS_VERSION}"; then
     url="${COREDNS_VERSION}"
   else
-    prefix=https://github.com/coredns/coredns/releases/download
-    url="${prefix}/v${COREDNS_VERSION}/coredns_${COREDNS_VERSION}_linux_amd64.tgz"
+    url="${ARTIFACTS_BASE_URL}/coredns_${COREDNS_VERSION}_linux_amd64.tgz"
     # Check to see if the CoreDNS artifact uses the old or new filename format.
     # The change occurred with release 1.2.2.
-    http_ok "${url}" || \
-      url="${prefix}/v${COREDNS_VERSION}/release.coredns_${COREDNS_VERSION}_linux_amd64.tgz"
   fi
 
   http_ok "${url}" || { error "could not stat ${url}"; return; }
@@ -4582,8 +4579,7 @@ download_crictl() {
   if is_url "${CRICTL_VERSION}"; then
     url="${CRICTL_VERSION}"
   else
-    url=https://github.com/kubernetes-incubator/cri-tools/releases/download
-    url="${url}/v${CRICTL_VERSION}/crictl-v${CRICTL_VERSION}-linux-amd64.tar.gz"
+    url="${ARTIFACTS_BASE_URL}/crictl-v${CRICTL_VERSION}-linux-amd64.tar.gz"
   fi
   http_ok "${url}" || { error "could not stat ${url}"; return; }
   info "downloading ${url}"
@@ -4599,8 +4595,7 @@ download_etcd() {
   if is_url "${ETCD_VERSION}"; then
     url="${ETCD_VERSION}"
   else
-    url=https://github.com/etcd-io/etcd/releases/download
-    url="${url}/v${ETCD_VERSION}/etcd-v${ETCD_VERSION}-linux-amd64.tar.gz"
+    url="${ARTIFACTS_BASE_URL}/etcd-v${ETCD_VERSION}-linux-amd64.tar.gz"
   fi
   http_ok "${url}" || { error "could not stat ${url}"; return; }
   info "downloading ${url}"
@@ -4878,8 +4873,7 @@ download_runc() {
   if is_url "${RUNC_VERSION}"; then
     url="${RUNC_VERSION}"
   else
-    url=https://github.com/opencontainers/runc/releases/download
-    url="${url}/v${RUNC_VERSION}/runc.amd64"
+    url="${ARTIFACTS_BASE_URL}/runc.amd64"
   fi
   http_ok "${url}" || { error "could not stat ${url}"; return; }
   info "downloading ${url}"
