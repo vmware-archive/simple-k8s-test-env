@@ -705,10 +705,20 @@ obtain_lock() {
 # the exit code of the evaluated function.
 do_with_lock() {
   debug "obtaining distributed lock to safely execute ${1}"
-  obtain_lock || { error "failed to obtain lock for ${1}"; return; }
-  eval "${1}"; exit_code="${?}"
-  release_lock
-  debug "released lock used to safeley execute ${1}"
+  i=0 && while true; do
+    [ "${i}" -gt 100 ] && { error "failed to obtain lock for ${1}"; return; }
+    if obtain_lock;
+    then
+      eval "${1}"; exit_code="${?}"
+      release_lock
+      debug "released lock used to safeley execute ${1}"
+      break;
+    else
+      sleep 3
+      i=$((i+1))
+      release_lock
+    fi
+  done
   return "${exit_code}"
 }
 
