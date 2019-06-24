@@ -55,7 +55,7 @@ variable "os_seed_gid" {
 // If var.sk8 and var.sk8_file are not set then the script is fetched 
 // from the following URL.
 variable "sk8_url" {
-  default = "https://raw.githubusercontent.com/vmware/simple-k8s-test-env/master/sk8.sh"
+  default = "http://storage.googleapis.com/sk8-bin/sk8.sh"
 }
 
 ////////////////////////////////////////////////////////////////////////////////
