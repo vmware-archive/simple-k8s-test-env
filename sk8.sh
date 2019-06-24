@@ -706,7 +706,7 @@ obtain_lock() {
 do_with_lock() {
   debug "obtaining distributed lock to safely execute ${1}"
   i=0 && while true; do
-    [ "${i}" -gt 100 ] && { error "failed to obtain lock for ${1}"; return; }
+    [ "${i}" -gt 200 ] && { error "failed to obtain lock for ${1}"; return; }
     if obtain_lock;
     then
       eval "${1}"; exit_code="${?}"
@@ -717,6 +717,7 @@ do_with_lock() {
       sleep 3
       i=$((i+1))
       release_lock
+      printf "."
     fi
   done
   return "${exit_code}"
@@ -735,38 +736,43 @@ grant_etcd_lease() {
   lease_id_key="/sk8/lease/id"
   lease_ttl_key="/sk8/lease/ttl"
   lease_grantor_key="/sk8/lease/grantor"
+  i=0 && while true; do
+    [ "${i}" -gt 100 ] && { error "failed to get lease id"; return; }
+    if ! ETCD_LEASE_ID=$(etcdctl get "${lease_id_key}" --print-value-only); then
+       sleep 3
+       i=$((i+1))
+       printf "."
+       continue;
+    fi
+    if [ -n "${ETCD_LEASE_ID}" ]; then
+      lease_ttl=$(etcdctl get "${lease_ttl_key}" --print-value-only) || \
+        { error "failed to get lease ttl"; return; }
+      lease_grantor=$(etcdctl get "${lease_grantor_key}" --print-value-only) || \
+        { error "failed to get lease grantor"; return; }
 
-  ETCD_LEASE_ID=$(etcdctl get "${lease_id_key}" --print-value-only) || \
-    { error "failed to get lease id"; return; }
+      # Create a shortcut way to invoke 'etcdctl put' with the lease attached.
+      PUT_WITH_LEASE="etcdctl put --lease=${ETCD_LEASE_ID}"
 
-  if [ -n "${ETCD_LEASE_ID}" ]; then
-    lease_ttl=$(etcdctl get "${lease_ttl_key}" --print-value-only) || \
-      { error "failed to get lease ttl"; return; }
-    lease_grantor=$(etcdctl get "${lease_grantor_key}" --print-value-only) || \
-      { error "failed to get lease grantor"; return; }
+      info "lease already exists: id=${ETCD_LEASE_ID} ttl=${lease_ttl} grantor=${lease_grantor}"
+    fi
+
+    # Grant a new lease.
+    ETCD_LEASE_ID=$(etcdctl lease grant "${ETCD_LEASE_TTL}" | \
+      awk '{print $2}') || { error "error granting etcd lease"; return; }
 
     # Create a shortcut way to invoke 'etcdctl put' with the lease attached.
     PUT_WITH_LEASE="etcdctl put --lease=${ETCD_LEASE_ID}"
 
-    info "lease already exists: id=${ETCD_LEASE_ID} ttl=${lease_ttl} grantor=${lease_grantor}"
-  fi
-
-  # Grant a new lease.
-  ETCD_LEASE_ID=$(etcdctl lease grant "${ETCD_LEASE_TTL}" | \
-    awk '{print $2}') || { error "error granting etcd lease"; return; }
-
-  # Create a shortcut way to invoke 'etcdctl put' with the lease attached.
-  PUT_WITH_LEASE="etcdctl put --lease=${ETCD_LEASE_ID}"
-
-  # Save the lease ID, TTL, and this host's name as the grantor.
-  ${PUT_WITH_LEASE} "${lease_id_key}" "${ETCD_LEASE_ID}" || \
-    { error "error storing etcd lease id"; return; }
-  ${PUT_WITH_LEASE} "${lease_ttl_key}" "${ETCD_LEASE_TTL}" || \
-    { error "error storing etcd lease TTL"; return; }
-  ${PUT_WITH_LEASE} "${lease_grantor_key}" "${HOST_FQDN}" || \
-    { error "error storing etcd lease grantor"; return; }
-
-  info "lease id=${ETCD_LEASE_ID} granted"
+    # Save the lease ID, TTL, and this host's name as the grantor.
+    ${PUT_WITH_LEASE} "${lease_id_key}" "${ETCD_LEASE_ID}" || \
+      { error "error storing etcd lease id"; return; }
+    ${PUT_WITH_LEASE} "${lease_ttl_key}" "${ETCD_LEASE_TTL}" || \
+      { error "error storing etcd lease TTL"; return; }
+    ${PUT_WITH_LEASE} "${lease_grantor_key}" "${HOST_FQDN}" || \
+      { error "error storing etcd lease grantor"; return; }
+      info "lease id=${ETCD_LEASE_ID} granted"
+      break;
+  done
 }
 
 put_string() {
