@@ -1,3 +1,9 @@
+---
+
+VMware has ended active development of this project, and its repository will no longer be updated.
+
+---
+
 # Simple Kubernetes Test Environment
 The Simple Kubernetes Test Enviornment (sk8) project is:
 
